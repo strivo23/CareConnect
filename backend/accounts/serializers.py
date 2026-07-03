@@ -2,9 +2,13 @@ from django.db import models
 
 from rest_framework import serializers
 from .models import User
+from django.contrib.auth import authenticate
 
 class RegisterSerializer(serializers.ModelSerializer):
     class Meta:
+        extra_kwargs = {
+            "password": {"write_only": True}
+        }
         model = User
         fields = [
             "full_name",
@@ -22,6 +26,11 @@ class RegisterSerializer(serializers.ModelSerializer):
             password=validated_data["password"],
         )
         return user
+
+class LoginSerializer(serializers.Serializer):
+    email = serializers.EmailField()
+    password = serializers.CharField(write_only=True)
+
     
 
 
