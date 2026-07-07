@@ -1,0 +1,37 @@
+.sidebar {
+  width: 250px;
+  min-height: 100vh;
+  background: #1e3a8a;
+  color: white;
+  padding-top: 20px;
+}
+
+.logo {
+  text-align: center;
+  margin-bottom: 35px;
+  font-size: 28px;
+}
+
+.menu {
+  display: flex;
+  align-items: center;
+  gap: 15px;
+  color: white;
+  text-decoration: none;
+  padding: 15px 20px;
+  transition: 0.3s;
+}
+
+.menu:hover {
+  background: #3656b3;
+}
+
+.active {
+  background: white;
+  color: #1e3a8a;
+  font-weight: bold;
+}
+
+.menu svg {
+  font-size: 18px;
+}
