@@ -1,4 +1,4 @@
-import { Routes, Route } from "react-router-dom";
+import { Navigate, Routes, Route } from "react-router-dom";
 
 import Login from "../pages/Login/Login";
 import Dashboard from "../pages/Dashboard/Dashboard";
@@ -12,90 +12,118 @@ import Reports from "../pages/Reports/Reports";
 import Settings from "../pages/settings/Settings";
 
 import Layout from "../components/Layout/Layout";
+import { isAuthenticated } from "../services/api";
+
+function RequireAuth({ children }) {
+  if (!isAuthenticated()) {
+    return <Navigate to="/" replace />;
+  }
+
+  return children;
+}
 
 export default function AppRoutes() {
   return (
     <Routes>
       <Route path="/" element={<Login />} />
+      <Route path="/login" element={<Navigate to="/" replace />} />
 
       <Route
   path="/dashboard"
   element={
-    <Layout>
-      <Dashboard />
-    </Layout>
+    <RequireAuth>
+      <Layout>
+        <Dashboard />
+      </Layout>
+    </RequireAuth>
   }
 />
 
       <Route
         path="/society"
         element={
-          <Layout>
-            <Society />
-          </Layout>
+          <RequireAuth>
+            <Layout>
+              <Society />
+            </Layout>
+          </RequireAuth>
         }
       />
 
       <Route
         path="/blocks"
         element={
-          <Layout>
-            <Block />
-          </Layout>
+          <RequireAuth>
+            <Layout>
+              <Block />
+            </Layout>
+          </RequireAuth>
         }
       />
 
       <Route
         path="/flats"
         element={
-          <Layout>
-            <Flat />
-          </Layout>
+          <RequireAuth>
+            <Layout>
+              <Flat />
+            </Layout>
+          </RequireAuth>
         }
       />
 
       <Route
         path="/residents"
         element={
-          <Layout>
-            <Residents />
-          </Layout>
+          <RequireAuth>
+            <Layout>
+              <Residents />
+            </Layout>
+          </RequireAuth>
         }
       />
 
       <Route
         path="/users"
         element={
-          <Layout>
-            <Users />
-          </Layout>
+          <RequireAuth>
+            <Layout>
+              <Users />
+            </Layout>
+          </RequireAuth>
         }
       />
 
       <Route
         path="/alerts"
         element={
-          <Layout>
-            <Alerts />
-          </Layout>
+          <RequireAuth>
+            <Layout>
+              <Alerts />
+            </Layout>
+          </RequireAuth>
         }
       />
 
       <Route
         path="/reports"
         element={
-          <Layout>
-            <Reports />
-          </Layout>
+          <RequireAuth>
+            <Layout>
+              <Reports />
+            </Layout>
+          </RequireAuth>
         }
       />
 
       <Route
         path="/settings"
         element={
-          <Layout>
-            <Settings />
-          </Layout>
+          <RequireAuth>
+            <Layout>
+              <Settings />
+            </Layout>
+          </RequireAuth>
         }
       />
     </Routes>

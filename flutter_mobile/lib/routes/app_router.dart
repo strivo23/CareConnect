@@ -1,0 +1,67 @@
+import 'package:go_router/go_router.dart';
+
+import '../features/authentication/login/login_screen.dart';
+import '../features/authentication/register/register_screen.dart';
+import '../features/dashboard/dashboard_shell.dart';
+import '../features/profile/profile_screen.dart';
+import '../features/society/society_screen.dart';
+import '../features/splash/splash_screen.dart';
+import '../providers/auth_provider.dart';
+
+class AppRouter {
+  static GoRouter router(AuthProvider authProvider) {
+    return GoRouter(
+      initialLocation: '/splash',
+      refreshListenable: authProvider,
+      redirect: (context, state) {
+        final isLoggingIn = state.matchedLocation == '/login' || state.matchedLocation == '/register';
+        final isSplash = state.matchedLocation == '/splash';
+
+        if (!authProvider.isReady) {
+          return isSplash ? null : '/splash';
+        }
+
+        if (!authProvider.isAuthenticated && !isLoggingIn) {
+          return '/login';
+        }
+
+        if (authProvider.isAuthenticated && isLoggingIn) {
+          return '/home';
+        }
+
+        if (authProvider.isAuthenticated && isSplash) {
+          return '/home';
+        }
+
+        return null;
+      },
+      routes: [
+        GoRoute(
+          path: '/splash',
+          builder: (context, state) => const SplashScreen(),
+        ),
+        GoRoute(
+          path: '/login',
+          builder: (context, state) => const LoginScreen(),
+        ),
+        GoRoute(
+          path: '/register',
+          builder: (context, state) => const RegisterScreen(),
+        ),
+        GoRoute(
+          path: '/home',
+          builder: (context, state) => const DashboardShell(),
+        ),
+        GoRoute(
+          path: '/profile',
+          builder: (context, state) => const ProfileScreen(),
+        ),
+        GoRoute(
+          path: '/society',
+          builder: (context, state) => const SocietyScreen(),
+        ),
+      ],
+    );
+  }
+}
+

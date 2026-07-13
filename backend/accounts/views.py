@@ -1,16 +1,41 @@
 from rest_framework.views import APIView
 from rest_framework.response import Response
-from rest_framework import status
-from .serializers import RegisterSerializer, LoginSerializer
+from rest_framework import status, viewsets, filters
+from rest_framework.decorators import action
 from django.contrib.auth import authenticate
+from django.utils import timezone
 from rest_framework_simplejwt.tokens import RefreshToken
+
+from .serializers import RegisterSerializer, LoginSerializer, ResidentProfileSerializer, UserSerializer
+from .models import ResidentProfile
+
 class RegisterAPIView(APIView):
     def post(self, request):
         serializer = RegisterSerializer(data=request.data)
         if serializer.is_valid():
-            serializer.save()
+            user = serializer.save()
+            
+            society_id = request.data.get('society')
+            block_id = request.data.get('block')
+            flat_id = request.data.get('flat')
+            
+            if society_id or block_id or flat_id:
+                from society.models import Society, BlockTower, Flat
+                society = Society.objects.filter(id=society_id).first() if society_id else None
+                block = BlockTower.objects.filter(id=block_id).first() if block_id else None
+                flat = Flat.objects.filter(id=flat_id).first() if flat_id else None
+                
+                ResidentProfile.objects.create(
+                    user=user,
+                    society=society,
+                    block=block,
+                    flat=flat,
+                    status='Pending'
+                )
+                
             return Response(serializer.data, status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
 class LoginAPIView(APIView):
     def post(self, request):
         serializer = LoginSerializer(data=request.data)
@@ -24,7 +49,83 @@ class LoginAPIView(APIView):
                     "message": "Login successful",
                     "refresh": str(refresh),
                     "access": str(refresh.access_token),
+                    "user": UserSerializer(user).data
                     }, status=status.HTTP_200_OK)
             return Response({"message": "Invalid credentials"}, status=status.HTTP_401_UNAUTHORIZED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-    
+
+class ResidentProfileViewSet(viewsets.ModelViewSet):
+    queryset = ResidentProfile.objects.all()
+    serializer_class = ResidentProfileSerializer
+    filter_backends = [filters.SearchFilter, filters.OrderingFilter]
+    search_fields = ['user__email', 'user__full_name', 'society__name', 'user__phone_number']
+    ordering_fields = ['id', 'status', 'approved_at']
+    ordering = ['-id']
+
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        status_param = self.request.query_params.get('status')
+        if status_param:
+            queryset = queryset.filter(status=status_param)
+        user_param = self.request.query_params.get('user')
+        if user_param:
+            queryset = queryset.filter(user_id=user_param)
+        society_param = self.request.query_params.get('society')
+        if society_param:
+            queryset = queryset.filter(society_id=society_param)
+        return queryset
+
+    @action(detail=True, methods=['post'])
+    def approve(self, request, pk=None):
+        profile = self.get_object()
+        profile.status = "Approved"
+        profile.approved_by = request.user if request.user.is_authenticated else None
+        profile.approved_at = timezone.now()
+        profile.save()
+        
+        # update the user's role to RESIDENT if it wasn't already
+        user = profile.user
+        if user.role != "RESIDENT":
+            user.role = "RESIDENT"
+            user.save()
+            
+        return Response({"message": "Resident approved successfully", "status": profile.status})
+
+    @action(detail=True, methods=['post'])
+    def reject(self, request, pk=None):
+        profile = self.get_object()
+        profile.status = "Rejected"
+        profile.approved_by = request.user if request.user.is_authenticated else None
+        profile.approved_at = timezone.now()
+        profile.save()
+        return Response({"message": "Resident rejected successfully", "status": profile.status})
+
+class DashboardStatsAPIView(APIView):
+    def get(self, request):
+        from society.models import Society, BlockTower, Flat
+        from accounts.models import User, ResidentProfile
+        
+        return Response({
+            "total_societies": Society.objects.count(),
+            "total_blocks": BlockTower.objects.count(),
+            "total_flats": Flat.objects.count(),
+            "total_residents": ResidentProfile.objects.count(),
+            "total_users": User.objects.count(),
+            "total_alerts": 0
+        })
+
+from rest_framework import permissions
+
+class MeAPIView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        return Response(UserSerializer(request.user).data)
+
+    def patch(self, request):
+        user = request.user
+        serializer = UserSerializer(user, data=request.data, partial=True)
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
