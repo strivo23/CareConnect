@@ -3,6 +3,8 @@ import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 
+import 'package:intl/intl.dart';
+import 'package:go_router/go_router.dart';
 import '../../core/theme/app_theme.dart';
 import '../../providers/notifications_provider.dart';
 
@@ -270,6 +272,9 @@ class _AlertsScreenState extends State<AlertsScreen> with SingleTickerProviderSt
               // SECTION 1: EMERGENCY SOS
               _buildSOSSection(),
               const SizedBox(height: 20),
+
+              // ACTIVE GUARDIAN ALERTS
+              _buildActiveGuardianAlerts(),
 
               // SECTION 2: CURRENT LOCATION
               _buildLocationSection(),
@@ -1122,6 +1127,156 @@ class _AlertsScreenState extends State<AlertsScreen> with SingleTickerProviderSt
           ),
         ],
       ),
+    );
+  }
+
+  Widget _buildActiveGuardianAlerts() {
+    final provider = context.watch<NotificationsProvider>();
+    final alerts = provider.guardianNotifications;
+
+    if (alerts.isEmpty) return const SizedBox.shrink();
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Active Guardian Alerts',
+          style: GoogleFonts.outfit(
+            fontSize: 16,
+            fontWeight: FontWeight.w800,
+            color: Colors.red.shade800,
+          ),
+        ),
+        const SizedBox(height: 12),
+        ListView.builder(
+          shrinkWrap: true,
+          physics: const NeverScrollableScrollPhysics(),
+          itemCount: alerts.length,
+          itemBuilder: (context, index) {
+            final alert = alerts[index];
+            final statusColor = alert.incidentStatus == 'Resolved'
+                ? Colors.green
+                : alert.incidentStatus == 'Pending'
+                    ? Colors.orange
+                    : Colors.blue;
+
+            return Container(
+              margin: const EdgeInsets.only(bottom: 12),
+              decoration: BoxDecoration(
+                color: Colors.red.shade50,
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(color: Colors.red.shade200, width: 1.5),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.red.withValues(alpha: 0.05),
+                    blurRadius: 10,
+                    offset: const Offset(0, 4),
+                  ),
+                ],
+              ),
+              child: Material(
+                color: Colors.transparent,
+                child: InkWell(
+                  borderRadius: BorderRadius.circular(20),
+                  onTap: () {
+                    // Mark as read when navigating
+                    context.read<NotificationsProvider>().markAsRead(alert.id);
+                    context.push('/sos-detail', extra: alert);
+                  },
+                  child: Padding(
+                    padding: const EdgeInsets.all(16.0),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Row(
+                              children: [
+                                const Icon(Icons.emergency_rounded, color: AppTheme.danger, size: 20),
+                                const SizedBox(width: 8),
+                                Text(
+                                  alert.residentName.isNotEmpty ? alert.residentName : 'Unknown Resident',
+                                  style: GoogleFonts.outfit(
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 15,
+                                    color: Colors.red.shade900,
+                                  ),
+                                ),
+                              ],
+                            ),
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                              decoration: BoxDecoration(
+                                color: statusColor.withValues(alpha: 0.1),
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: Text(
+                                alert.incidentStatus.isNotEmpty ? alert.incidentStatus : 'Pending',
+                                style: GoogleFonts.inter(
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.bold,
+                                  color: statusColor,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 10),
+                        Text(
+                          'Category: ${alert.emergencyCategory.isNotEmpty ? alert.emergencyCategory : "SOS"}',
+                          style: GoogleFonts.inter(
+                            fontSize: 12,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.black87,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          alert.incidentMessage.isNotEmpty ? alert.incidentMessage : 'Immediate help needed.',
+                          style: GoogleFonts.inter(
+                            fontSize: 12,
+                            color: Colors.grey.shade700,
+                          ),
+                        ),
+                        const SizedBox(height: 10),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Text(
+                              DateFormat('dd MMM, hh:mm a').format(alert.createdAt),
+                              style: GoogleFonts.inter(
+                                fontSize: 10,
+                                color: Colors.grey.shade500,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                            Row(
+                              children: [
+                                Text(
+                                  'Respond',
+                                  style: GoogleFonts.inter(
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.bold,
+                                    color: Colors.red.shade900,
+                                  ),
+                                ),
+                                const SizedBox(width: 4),
+                                Icon(Icons.arrow_forward_ios_rounded, color: Colors.red.shade900, size: 10),
+                              ],
+                            ),
+                          ],
+                        )
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            );
+          },
+        ),
+        const SizedBox(height: 12),
+      ],
     );
   }
 }

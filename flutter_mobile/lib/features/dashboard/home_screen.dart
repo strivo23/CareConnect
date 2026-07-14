@@ -3,11 +3,13 @@ import 'package:provider/provider.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import 'package:go_router/go_router.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/widgets/offline_banner.dart';
 import '../../providers/app_state_provider.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/emergency_provider.dart';
+import '../../services/location_service.dart';
 
 class HomeScreen extends StatelessWidget {
   const HomeScreen({super.key});
@@ -16,6 +18,68 @@ class HomeScreen extends StatelessWidget {
     final uri = Uri.parse('tel:112');
     if (await canLaunchUrl(uri)) {
       await launchUrl(uri);
+    }
+  }
+
+  Future<void> _handleSOSClick(BuildContext context) async {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => const Center(
+        child: Card(
+          child: Padding(
+            padding: EdgeInsets.symmetric(horizontal: 24, vertical: 20),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                CircularProgressIndicator(color: AppTheme.danger),
+                SizedBox(height: 16),
+                Text(
+                  'Capturing GPS Location...',
+                  style: TextStyle(fontWeight: FontWeight.bold),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+
+    try {
+      final locationService = LocationService();
+      final pos = await locationService.getCurrentLocation();
+      if (pos == null) throw Exception("Failed to get location.");
+      
+      final address = await locationService.reverseGeocode(pos.latitude, pos.longitude);
+      
+      if (context.mounted) {
+        Navigator.pop(context); // Dismiss loading dialog
+        context.push(
+          '/sos-message',
+          extra: {
+            'latitude': pos.latitude,
+            'longitude': pos.longitude,
+            'address': address,
+          },
+        );
+      }
+    } catch (e) {
+      if (context.mounted) {
+        Navigator.pop(context); // Dismiss loading dialog
+        showDialog(
+          context: context,
+          builder: (context) => AlertDialog(
+            title: const Text('Location Capture Error'),
+            content: Text(e.toString()),
+            actions: [
+               TextButton(
+                 onPressed: () => Navigator.pop(context),
+                 child: const Text('OK'),
+               ),
+            ],
+          ),
+        );
+      }
     }
   }
 
@@ -220,11 +284,7 @@ class HomeScreen extends StatelessWidget {
                       child: InkWell(
                         onTap: emergency.isLoading
                             ? null
-                            : () async {
-                                final success = await context.read<EmergencyProvider>().triggerSOS();
-                                if (!context.mounted) return;
-                                _showResult(context, success, context.read<EmergencyProvider>().lastMessage ?? 'SOS Dispatched');
-                              },
+                            : () => _handleSOSClick(context),
                         customBorder: const CircleBorder(),
                         child: Column(
                           mainAxisAlignment: MainAxisAlignment.center,
@@ -516,32 +576,6 @@ class HomeScreen extends StatelessWidget {
             ),
           ],
         ),
-      ),
-    );
-  }
-
-  void _showResult(BuildContext context, bool success, String message) {
-    showDialog<void>(
-      context: context,
-      builder: (context) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: Row(
-          children: [
-            Icon(
-              success ? Icons.check_circle_rounded : Icons.error_rounded,
-              color: success ? const Color(0xFF22C55E) : const Color(0xFFEF4444),
-            ),
-            const SizedBox(width: 8),
-            Text(success ? 'SOS Dispatched' : 'SOS Failed', style: GoogleFonts.outfit(fontWeight: FontWeight.bold)),
-          ],
-        ),
-        content: Text(message, style: GoogleFonts.inter(fontWeight: FontWeight.w500)),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: Text('Close', style: GoogleFonts.inter(fontWeight: FontWeight.bold, color: AppTheme.primary)),
-          )
-        ],
       ),
     );
   }

@@ -8,7 +8,7 @@ class AppConstants {
           'API_BASE_URL',
           // For Android Emulator: 10.0.2.2 (alias to host PC)
           // For real device on same Wi-Fi: use your PC's LAN IP below
-          defaultValue: 'http://10.15.136.176:8000',
+          defaultValue: 'http://10.15.136.149:8000',
         );
 
   static const apiTokenKey = 'careconnect_access_token';

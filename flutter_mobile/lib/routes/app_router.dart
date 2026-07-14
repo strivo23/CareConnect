@@ -7,6 +7,11 @@ import '../features/profile/profile_screen.dart';
 import '../features/society/society_screen.dart';
 import '../features/splash/splash_screen.dart';
 import '../providers/auth_provider.dart';
+import '../features/dashboard/sos_detail_screen.dart';
+import '../models/notification_model.dart';
+import '../features/dashboard/sos_message_screen.dart';
+import '../features/dashboard/sos_review_screen.dart';
+import '../features/dashboard/sos_success_screen.dart';
 
 class AppRouter {
   static GoRouter router(AuthProvider authProvider) {
@@ -59,6 +64,38 @@ class AppRouter {
         GoRoute(
           path: '/society',
           builder: (context, state) => const SocietyScreen(),
+        ),
+        GoRoute(
+          path: '/sos-detail',
+          builder: (context, state) {
+            final notification = state.extra as AppNotificationModel;
+            return SOSDetailScreen(notification: notification);
+          },
+        ),
+        GoRoute(
+          path: '/sos-message',
+          builder: (context, state) {
+            final args = state.extra as Map<String, dynamic>;
+            return SOSMessageScreen(
+              latitude: args['latitude'] as double,
+              longitude: args['longitude'] as double,
+              address: args['address']?.toString() ?? '',
+            );
+          },
+        ),
+        GoRoute(
+          path: '/sos-review',
+          builder: (context, state) {
+            final data = state.extra as Map<String, dynamic>;
+            return SOSReviewScreen(data: data);
+          },
+        ),
+        GoRoute(
+          path: '/sos-success',
+          builder: (context, state) {
+            final incidentData = state.extra as Map<String, dynamic>;
+            return SOSSuccessScreen(incidentData: incidentData);
+          },
         ),
       ],
     );

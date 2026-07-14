@@ -1,6 +1,6 @@
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
-from .views import RelationshipViewSet, VerificationStatusViewSet, GuardianViewSet, EmergencyContactViewSet
+from .views import RelationshipViewSet, VerificationStatusViewSet, GuardianViewSet, EmergencyContactViewSet, EmergencyAlertView
 
 router = DefaultRouter()
 router.register('relationships', RelationshipViewSet, basename='relationship')
@@ -10,4 +10,6 @@ router.register('contacts', EmergencyContactViewSet, basename='contact')
 
 urlpatterns = [
     path('', include(router.urls)),
+    # Flutter mobile SOS trigger endpoint
+    path('alerts/', EmergencyAlertView.as_view(), name='emergency-alerts'),
 ]

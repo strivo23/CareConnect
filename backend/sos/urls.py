@@ -1,0 +1,59 @@
+"""
+sos/urls.py
+
+URL configuration for the SOS module.
+
+All routes are prefixed with /api/sos/ (configured in careconnect/urls.py).
+
+  GET    categories/          — list active emergency categories
+  GET    incidents/           — list incidents (role-scoped, search/filter/order)
+  GET    incidents/<id>/      — retrieve single incident
+  GET    history/             — authenticated resident's own history
+  POST   send/                — create new SOS incident
+  PATCH  accept/<id>/         — Pending → Accepted
+  PATCH  in-progress/<id>/    — Accepted → In Progress
+  PATCH  resolve/<id>/        — In Progress → Resolved
+  PATCH  cancel/<id>/         — any non-terminal → Cancelled
+"""
+
+from django.urls import path
+from .views import (
+    EmergencyCategoryListView,
+    SOSIncidentListView,
+    SOSIncidentDetailView,
+    SOSHistoryView,
+    SOSSendView,
+    SOSAcceptView,
+    SOSInProgressView,
+    SOSResolveView,
+    SOSCancelView,
+    SOSIncidentUpdateView,
+    SOSEmergencyMessageCreateView,
+    SOSEmergencyMessageListView,
+)
+
+urlpatterns = [
+    # ── Categories ──────────────────────────────────────────────────────────
+    path("categories/", EmergencyCategoryListView.as_view(), name="sos-categories"),
+
+    # ── Incidents (list + detail) ────────────────────────────────────────────
+    path("incidents/",         SOSIncidentListView.as_view(),   name="sos-incident-list"),
+    path("incidents/<int:pk>/", SOSIncidentDetailView.as_view(), name="sos-incident-detail"),
+
+    # ── My History ──────────────────────────────────────────────────────────
+    path("history/", SOSHistoryView.as_view(), name="sos-history"),
+
+    # ── Send (create) ───────────────────────────────────────────────────────
+    path("send/", SOSSendView.as_view(), name="sos-send"),
+
+    # ── Status-change actions ────────────────────────────────────────────────
+    path("accept/<int:pk>/",      SOSAcceptView.as_view(),     name="sos-accept"),
+    path("in-progress/<int:pk>/", SOSInProgressView.as_view(), name="sos-in-progress"),
+    path("resolve/<int:pk>/",     SOSResolveView.as_view(),    name="sos-resolve"),
+    path("cancel/<int:pk>/",      SOSCancelView.as_view(),     name="sos-cancel"),
+
+    # ── Update & Emergency Messages ──────────────────────────────────────────
+    path("<int:pk>/",             SOSIncidentUpdateView.as_view(),    name="sos-update"),
+    path("<int:pk>/message/",     SOSEmergencyMessageCreateView.as_view(), name="sos-message-create"),
+    path("<int:pk>/messages/",    SOSEmergencyMessageListView.as_view(),   name="sos-message-list"),
+]

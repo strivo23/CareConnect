@@ -1,8 +1,12 @@
-from rest_framework import viewsets, filters, permissions
+from rest_framework import viewsets, filters, permissions, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
+from rest_framework.views import APIView
 from .models import Relationship, VerificationStatus, Guardian, EmergencyContact
 from .serializers import RelationshipSerializer, VerificationStatusSerializer, GuardianSerializer, EmergencyContactSerializer
+from sos.models import EmergencyCategory
+from sos.services import SOSService
+from sos.serializers import SOSIncidentSerializer
 
 class RelationshipViewSet(viewsets.ModelViewSet):
     queryset = Relationship.objects.all()
@@ -66,3 +70,58 @@ class EmergencyContactViewSet(viewsets.ModelViewSet):
             
         contact.save()
         return Response({"message": "Emergency contact verified successfully", "verified": True})
+
+
+class EmergencyAlertView(APIView):
+    """
+    POST /api/emergency/alerts/
+
+    Flutter mobile endpoint for triggering an SOS alert.
+    Accepts:
+      - category (str): slug name of the emergency type e.g. 'SOS', 'fire', 'ambulance'
+      - message  (str): optional description
+      - latitude / longitude (optional)
+
+    Maps the category slug to an EmergencyCategory (creates one if needed),
+    then delegates to SOSService to create the incident + fire notification.
+    """
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request):
+        category_slug = (request.data.get('category') or 'SOS').strip()
+        message = request.data.get('message', '')
+        latitude = request.data.get('latitude')
+        longitude = request.data.get('longitude')
+
+        # Find or create matching EmergencyCategory (case-insensitive name match)
+        category = EmergencyCategory.objects.filter(name__iexact=category_slug).first()
+        if category is None:
+            category = EmergencyCategory.objects.create(
+                name=category_slug.title(),
+                is_active=True,
+            )
+
+        if not category.is_active:
+            return Response(
+                {'detail': f'Emergency category "{category.name}" is currently inactive.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        incident_data = {
+            'category': category,
+            'message': message[:500] if message else '',
+        }
+        if latitude is not None:
+            incident_data['latitude'] = latitude
+        if longitude is not None:
+            incident_data['longitude'] = longitude
+
+        incident = SOSService.create_incident(user=request.user, validated_data=incident_data)
+
+        return Response(
+            {
+                'message': 'SOS alert received. Help is on the way.',
+                'incident': SOSIncidentSerializer(incident, context={'request': request}).data,
+            },
+            status=status.HTTP_201_CREATED,
+        )

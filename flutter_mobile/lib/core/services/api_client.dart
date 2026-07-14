@@ -24,7 +24,9 @@ class ApiClient {
           handler.next(options);
         },
         onError: (error, handler) async {
-          final shouldRefresh = error.response?.statusCode == 401 && !_isRefreshing;
+          final isAuthEndpoint = error.requestOptions.path.contains('/login') ||
+              error.requestOptions.path.contains('/token/refresh');
+          final shouldRefresh = error.response?.statusCode == 401 && !_isRefreshing && !isAuthEndpoint;
           if (!shouldRefresh) {
             handler.next(error);
             return;

@@ -23,9 +23,20 @@ class NotificationRepository {
     }
   }
 
+  Future<List<AppNotificationModel>> fetchGuardianNotifications() async {
+    try {
+      final response = await _client.get('/api/notifications/guardian/');
+      final List items = response.data is List ? response.data as List : const [];
+      final notifications = items.map((item) => AppNotificationModel.fromJson(Map<String, dynamic>.from(item as Map))).toList();
+      return notifications;
+    } catch (_) {
+      return const [];
+    }
+  }
+
   Future<void> markAsRead(String id) async {
     try {
-      await _client.post('/api/notifications/$id/read/');
+      await _client.patch('/api/notifications/$id/read/');
     } catch (_) {}
   }
 
@@ -43,18 +54,7 @@ class NotificationRepository {
 
   Future<void> _cache(List<AppNotificationModel> notifications) async {
     final jsonString = jsonEncode(
-      notifications
-          .map(
-            (item) => {
-              'id': item.id,
-              'title': item.title,
-              'message': item.message,
-              'category': item.category,
-              'is_read': item.isRead,
-              'created_at': item.createdAt.toIso8601String(),
-            },
-          )
-          .toList(),
+      notifications.map((item) => item.toJson()).toList(),
     );
     await LocalStorageService.instance.saveString(AppConstants.apiNotificationsCacheKey, jsonString);
   }

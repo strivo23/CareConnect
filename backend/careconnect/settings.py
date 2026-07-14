@@ -25,7 +25,7 @@ SECRET_KEY = "django-insecure-bz#sr7*w1%(6zbpxis6vbrdy@2&fdv73&34wi4vhe3g79bc&=_
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
-ALLOWED_HOSTS = []
+ALLOWED_HOSTS = ["*"]
 
 
 # Application definition
@@ -42,11 +42,14 @@ INSTALLED_APPS = [
     "rest_framework.authtoken",
     "rest_framework_simplejwt",
     "corsheaders",
-    
+    "django_filters",
+    "drf_spectacular",
+
     "accounts",
     "emergency",
     "notifications",
     "society",
+    "sos",
 ]
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
@@ -115,7 +118,7 @@ AUTH_PASSWORD_VALIDATORS = [
     },
 ]
 
-AUTH_USER_MODEL = "accounts.User"
+AUTH_USER_MODEL = "accounts.CustomUser"
 
 
 # Internationalization
@@ -144,8 +147,19 @@ REST_FRAMEWORK = {
     'DEFAULT_PAGINATION_CLASS': 'rest_framework.pagination.PageNumberPagination',
     'PAGE_SIZE': 10,
     'DEFAULT_FILTER_BACKENDS': (
+        'django_filters.rest_framework.DjangoFilterBackend',
         'rest_framework.filters.SearchFilter',
         'rest_framework.filters.OrderingFilter',
     ),
+    'DEFAULT_SCHEMA_CLASS': 'drf_spectacular.openapi.AutoSchema',
+}
+
+# API Documentation (drf-spectacular / Swagger)
+SPECTACULAR_SETTINGS = {
+    'TITLE': 'CareConnect API',
+    'DESCRIPTION': 'Backend API for the CareConnect resident management platform.',
+    'VERSION': '1.0.0',
+    'SERVE_INCLUDE_SCHEMA': False,
+    'COMPONENT_SPLIT_REQUEST': True,
 }
 

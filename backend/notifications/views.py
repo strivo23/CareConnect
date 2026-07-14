@@ -17,12 +17,26 @@ class NotificationViewSet(viewsets.ModelViewSet):
             Q(user=self.request.user) | Q(user__isnull=True)
         ).order_by('-created_at')
 
-    @action(detail=True, methods=['post'], url_path='read')
+    @action(detail=True, methods=['post', 'patch'], url_path='read')
     def mark_read(self, request, pk=None):
         notification = self.get_object()
         notification.is_read = True
         notification.save()
         return Response({"message": "Notification marked as read", "is_read": True})
+
+    @action(detail=False, methods=['get'], url_path='guardian')
+    def guardian(self, request):
+        # Return only notifications of category 'sos' targeted to this specific user (guardian)
+        queryset = Notification.objects.filter(
+            user=request.user,
+            category='sos'
+        ).order_by('-created_at')
+        serializer = self.get_serializer(queryset, many=True)
+        
+        # Printing API Response log as requested
+        print(f"API Response: {serializer.data}")
+        
+        return Response(serializer.data)
 
     @action(detail=False, methods=['post'], url_path='mark-all-read')
     def mark_all_read(self, request):
