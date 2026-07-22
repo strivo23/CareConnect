@@ -505,12 +505,26 @@ class IncidentTrackingStatsAPIView(APIView):
 
     def get(self, request):
         from notifications.models import NotificationLog
+        from accounts.models import VolunteerProfile, CustomUser
+        from django.utils import timezone
+        from datetime import timedelta
         
+        # Get today's date range
+        today_start = timezone.now().replace(hour=0, minute=0, second=0, microsecond=0)
+        today_end = today_start + timedelta(days=1)
+        
+        # Incident counts
         total_incidents = SOSIncident.objects.count()
         pending = SOSIncident.objects.filter(status='Pending').count()
         accepted = SOSIncident.objects.filter(status='Accepted').count()
+        in_progress = SOSIncident.objects.filter(status='In Progress').count()
         resolved = SOSIncident.objects.filter(status='Resolved').count()
         cancelled = SOSIncident.objects.filter(status='Cancelled').count()
+        todays_incidents = SOSIncident.objects.filter(created_at__gte=today_start, created_at__lt=today_end).count()
+        
+        # Volunteer & Security counts
+        volunteers_available = VolunteerProfile.objects.filter(is_online=True).count()
+        security_online = CustomUser.objects.filter(role=ROLE_SECURITY, is_active=True).count()
         
         # Calculate delivery statistics
         total_delivery = NotificationLog.objects.count()
@@ -533,9 +547,13 @@ class IncidentTrackingStatsAPIView(APIView):
             "status_counts": {
                 "Pending": pending,
                 "Accepted": accepted,
+                "In Progress": in_progress,
                 "Resolved": resolved,
                 "Cancelled": cancelled
             },
+            "todays_incidents": todays_incidents,
+            "volunteers_available": volunteers_available,
+            "security_online": security_online,
             "delivery_stats": {
                 "total": total_delivery,
                 "success": successful_delivery,

@@ -106,6 +106,17 @@ export const emergencyService = {
 
 export const dashboardService = {
   getStats: () => apiClient.get('/accounts/dashboard-stats/'),
+  getIncidentStats: () => apiClient.get('/sos/incidents/tracking-stats/'),
+};
+
+export const sosService = {
+  getAllIncidents: (params) => apiClient.get('/sos/incidents/', { params }),
+  getIncident: (id) => apiClient.get(`/sos/incidents/${id}/`),
+  getCategories: () => apiClient.get('/sos/categories/'),
+  acceptIncident: (id) => apiClient.patch(`/sos/accept/${id}/`),
+  markInProgress: (id) => apiClient.patch(`/sos/in-progress/${id}/`),
+  resolveIncident: (id) => apiClient.patch(`/sos/resolve/${id}/`),
+  cancelIncident: (id) => apiClient.patch(`/sos/cancel/${id}/`),
 };
 
 export default apiClient;
