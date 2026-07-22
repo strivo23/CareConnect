@@ -22,9 +22,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   // Confirm logout dialog
   void _confirmLogout(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
+        backgroundColor: Theme.of(context).colorScheme.surface,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(22)),
         title: Row(
           children: [
@@ -32,20 +34,29 @@ class _SettingsScreenState extends State<SettingsScreen> {
             const SizedBox(width: 10),
             Text(
               'Logout',
-              style: GoogleFonts.outfit(fontWeight: FontWeight.bold),
+              style: GoogleFonts.outfit(
+                fontWeight: FontWeight.bold,
+                color: Theme.of(context).colorScheme.onSurface,
+              ),
             ),
           ],
         ),
         content: Text(
           'Are you sure you want to log out of CareConnect?',
-          style: GoogleFonts.inter(height: 1.4),
+          style: GoogleFonts.inter(
+            height: 1.4,
+            color: isDark ? Colors.white70 : Colors.black87,
+          ),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
             child: Text(
               'Cancel',
-              style: GoogleFonts.inter(fontWeight: FontWeight.bold, color: Colors.grey.shade600),
+              style: GoogleFonts.inter(
+                fontWeight: FontWeight.bold,
+                color: isDark ? Colors.grey.shade400 : Colors.grey.shade600,
+              ),
             ),
           ),
           ElevatedButton(
@@ -73,9 +84,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   // Confirm delete account dialog
   void _confirmDeleteAccount() {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
+        backgroundColor: Theme.of(context).colorScheme.surface,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(22)),
         title: Row(
           children: [
@@ -83,20 +96,29 @@ class _SettingsScreenState extends State<SettingsScreen> {
             const SizedBox(width: 10),
             Text(
               'Delete Account',
-              style: GoogleFonts.outfit(fontWeight: FontWeight.bold),
+              style: GoogleFonts.outfit(
+                fontWeight: FontWeight.bold,
+                color: Theme.of(context).colorScheme.onSurface,
+              ),
             ),
           ],
         ),
         content: Text(
           'WARNING: This action is permanent and cannot be undone. All your profile details, emergency contacts, and logs will be permanently deleted from the society system.',
-          style: GoogleFonts.inter(height: 1.4),
+          style: GoogleFonts.inter(
+            height: 1.4,
+            color: isDark ? Colors.white70 : Colors.black87,
+          ),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
             child: Text(
               'Cancel',
-              style: GoogleFonts.inter(fontWeight: FontWeight.bold, color: Colors.grey.shade600),
+              style: GoogleFonts.inter(
+                fontWeight: FontWeight.bold,
+                color: isDark ? Colors.grey.shade400 : Colors.grey.shade600,
+              ),
             ),
           ),
           ElevatedButton(
@@ -128,9 +150,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
   // Show Bottom Sheet for Language Picker
   Future<void> _showLanguagePicker() async {
     final auth = context.read<AuthProvider>();
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     final selected = await showModalBottomSheet<String>(
       context: context,
-      backgroundColor: Colors.white,
+      backgroundColor: Theme.of(context).colorScheme.surface,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
       ),
@@ -143,12 +166,19 @@ class _SettingsScreenState extends State<SettingsScreen> {
               Container(
                 height: 4,
                 width: 36,
-                decoration: BoxDecoration(color: Colors.grey.shade300, borderRadius: BorderRadius.circular(2)),
+                decoration: BoxDecoration(
+                  color: isDark ? Colors.grey.shade700 : Colors.grey.shade300,
+                  borderRadius: BorderRadius.circular(2),
+                ),
               ),
               const SizedBox(height: 14),
               Text(
                 'Select Application Language',
-                style: GoogleFonts.outfit(fontWeight: FontWeight.bold, fontSize: 16),
+                style: GoogleFonts.outfit(
+                  fontWeight: FontWeight.bold,
+                  fontSize: 16,
+                  color: Theme.of(context).colorScheme.onSurface,
+                ),
               ),
               const SizedBox(height: 12),
               _buildLanguageTile(context, 'English', 'en', auth.languageCode),
@@ -174,25 +204,33 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   Widget _buildLanguageTile(BuildContext context, String title, String code, String activeCode) {
     final isActive = code == activeCode;
-    return ListTile(
-      title: Text(
-        title,
-        style: GoogleFonts.inter(
-          fontWeight: isActive ? FontWeight.bold : FontWeight.normal,
-          color: isActive ? AppTheme.primary : Colors.black87,
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    return Material(
+      color: Colors.transparent,
+      child: ListTile(
+        title: Text(
+          title,
+          style: GoogleFonts.inter(
+            fontWeight: isActive ? FontWeight.bold : FontWeight.normal,
+            color: isActive ? AppTheme.primary : (isDark ? Colors.white70 : Colors.black87),
+          ),
         ),
+        trailing: isActive ? const Icon(Icons.check_circle_rounded, color: AppTheme.primary) : null,
+        onTap: () => Navigator.pop(context, code),
       ),
-      trailing: isActive ? const Icon(Icons.check_circle_rounded, color: AppTheme.primary) : null,
-      onTap: () => Navigator.pop(context, code),
     );
   }
 
   // Show Bottom Sheet for Theme Picker
   Future<void> _showThemePicker() async {
     final auth = context.read<AuthProvider>();
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final currentMode = auth.themeModeString;
+    final activeThemeModeLabel = currentMode == 'dark' ? 'Dark' : (currentMode == 'light' ? 'Light' : 'System');
+
     final selected = await showModalBottomSheet<String>(
       context: context,
-      backgroundColor: Colors.white,
+      backgroundColor: Theme.of(context).colorScheme.surface,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
       ),
@@ -205,17 +243,24 @@ class _SettingsScreenState extends State<SettingsScreen> {
               Container(
                 height: 4,
                 width: 36,
-                decoration: BoxDecoration(color: Colors.grey.shade300, borderRadius: BorderRadius.circular(2)),
+                decoration: BoxDecoration(
+                  color: isDark ? Colors.grey.shade700 : Colors.grey.shade300,
+                  borderRadius: BorderRadius.circular(2),
+                ),
               ),
               const SizedBox(height: 14),
               Text(
                 'Select App Theme Mode',
-                style: GoogleFonts.outfit(fontWeight: FontWeight.bold, fontSize: 16),
+                style: GoogleFonts.outfit(
+                  fontWeight: FontWeight.bold,
+                  fontSize: 16,
+                  color: Theme.of(context).colorScheme.onSurface,
+                ),
               ),
               const SizedBox(height: 12),
-              _buildThemeTile(context, 'System Default', 'System', _themeMode),
-              _buildThemeTile(context, 'Light Theme', 'Light', _themeMode),
-              _buildThemeTile(context, 'Dark Theme', 'Dark', _themeMode),
+              _buildThemeTile(context, 'System Default', 'System', activeThemeModeLabel),
+              _buildThemeTile(context, 'Light Theme', 'Light', activeThemeModeLabel),
+              _buildThemeTile(context, 'Dark Theme', 'Dark', activeThemeModeLabel),
             ],
           ),
         ),
@@ -223,17 +268,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
 
     if (selected != null && mounted) {
-      setState(() {
-        _themeMode = selected;
-      });
       if (selected == 'Dark') {
-        auth.toggleTheme(true);
+        await auth.setThemeMode('dark');
       } else if (selected == 'Light') {
-        auth.toggleTheme(false);
+        await auth.setThemeMode('light');
       } else {
-        // System Theme Default Option
-        final isPlatformDark = MediaQuery.of(context).platformBrightness == Brightness.dark;
-        auth.toggleTheme(isPlatformDark);
+        await auth.setThemeMode('system');
       }
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -247,18 +287,23 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   Widget _buildThemeTile(BuildContext context, String title, String mode, String activeMode) {
     final isActive = mode == activeMode;
-    return ListTile(
-      title: Text(
-        title,
-        style: GoogleFonts.inter(
-          fontWeight: isActive ? FontWeight.bold : FontWeight.normal,
-          color: isActive ? AppTheme.primary : Colors.black87,
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    return Material(
+      color: Colors.transparent,
+      child: ListTile(
+        title: Text(
+          title,
+          style: GoogleFonts.inter(
+            fontWeight: isActive ? FontWeight.bold : FontWeight.normal,
+            color: isActive ? AppTheme.primary : (isDark ? Colors.white70 : Colors.black87),
+          ),
         ),
+        trailing: isActive ? const Icon(Icons.check_circle_rounded, color: AppTheme.primary) : null,
+        onTap: () => Navigator.pop(context, mode),
       ),
-      trailing: isActive ? const Icon(Icons.check_circle_rounded, color: AppTheme.primary) : null,
-      onTap: () => Navigator.pop(context, mode),
     );
   }
+
 
   @override
   Widget build(BuildContext context) {
@@ -267,21 +312,26 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final resident = appState.residentProfile;
     final user = auth.user;
 
+    final currentMode = auth.themeModeString;
+    final displayThemeMode = currentMode == 'dark' ? 'Dark' : (currentMode == 'light' ? 'Light' : 'System');
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final dividerColor = isDark ? Colors.white10 : const Color(0xFFF1F5F9);
+
     return Scaffold(
-      backgroundColor: Colors.grey.shade50,
+      backgroundColor: isDark ? const Color(0xFF111418) : Colors.grey.shade50,
       appBar: AppBar(
-        backgroundColor: Colors.white,
+        backgroundColor: Theme.of(context).colorScheme.surface,
         elevation: 0,
         leading: Navigator.canPop(context)
             ? IconButton(
-                icon: const Icon(Icons.arrow_back_ios_new_rounded, color: Colors.black87, size: 20),
+                icon: Icon(Icons.arrow_back_ios_new_rounded, color: Theme.of(context).colorScheme.onSurface, size: 20),
                 onPressed: () => Navigator.maybePop(context),
               )
             : null,
         title: Text(
           'Settings',
           style: GoogleFonts.outfit(
-            color: Colors.black87,
+            color: Theme.of(context).colorScheme.onSurface,
             fontSize: 22,
             fontWeight: FontWeight.w900,
           ),
@@ -314,7 +364,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     subtitle: 'View and edit personal information',
                     onTap: () => context.go('/profile'),
                   ),
-                  const Divider(height: 1, color: Color(0xFFF1F5F9)),
+                  Divider(height: 1, color: dividerColor),
                   _buildListTile(
                     icon: Icons.lock_outline_rounded,
                     title: 'Change Password',
@@ -328,20 +378,20 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       );
                     },
                   ),
-                  const Divider(height: 1, color: Color(0xFFF1F5F9)),
+                  Divider(height: 1, color: dividerColor),
                   _buildListTile(
                     icon: Icons.phone_android_rounded,
                     title: 'Linked Mobile',
                     subtitle: user?.phoneNumber.isNotEmpty == true ? user!.phoneNumber : '—',
-                    trailing: const Icon(Icons.chevron_right_rounded, color: Colors.grey),
+                    trailing: Icon(Icons.chevron_right_rounded, color: isDark ? Colors.white38 : Colors.grey),
                     onTap: () => context.go('/profile'),
                   ),
-                  const Divider(height: 1, color: Color(0xFFF1F5F9)),
+                  Divider(height: 1, color: dividerColor),
                   _buildListTile(
                     icon: Icons.mail_outline_rounded,
                     title: 'Email',
                     subtitle: user?.email.isNotEmpty == true ? user!.email : '—',
-                    trailing: const Icon(Icons.chevron_right_rounded, color: Colors.grey),
+                    trailing: Icon(Icons.chevron_right_rounded, color: isDark ? Colors.white38 : Colors.grey),
                     onTap: () => context.go('/profile'),
                   ),
                 ],
@@ -356,9 +406,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     value: auth.useDarkTheme,
                     onChanged: (val) {
                       auth.toggleTheme(val);
-                      setState(() {
-                        _themeMode = val ? 'Dark' : 'Light';
-                      });
                       ScaffoldMessenger.of(context).showSnackBar(
                         SnackBar(
                           content: Text(val ? 'Dark mode enabled' : 'Light mode enabled'),
@@ -367,12 +414,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         ),
                       );
                     },
-                    secondary: const Icon(Icons.dark_mode_outlined, color: Colors.blueAccent),
+                    secondary: Icon(Icons.dark_mode_outlined, color: isDark ? Colors.blue.shade300 : Colors.blueAccent),
                     title: Text('Dark Mode', style: GoogleFonts.inter(fontWeight: FontWeight.bold, fontSize: 14)),
                     activeColor: AppTheme.primary,
                     contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
                   ),
-                  const Divider(height: 1, color: Color(0xFFF1F5F9)),
+                  Divider(height: 1, color: dividerColor),
                   _buildListTile(
                     icon: Icons.language_rounded,
                     title: 'Language',
@@ -383,7 +430,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                             : 'Marathi (मराठी)',
                     onTap: _showLanguagePicker,
                   ),
-                  const Divider(height: 1, color: Color(0xFFF1F5F9)),
+                  Divider(height: 1, color: dividerColor),
                   SwitchListTile.adaptive(
                     value: _pushNotifications,
                     onChanged: (val) {
@@ -403,7 +450,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     activeColor: AppTheme.primary,
                     contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
                   ),
-                  const Divider(height: 1, color: Color(0xFFF1F5F9)),
+                  Divider(height: 1, color: dividerColor),
                   _buildListTile(
                     icon: Icons.location_on_outlined,
                     title: 'Location Access',
@@ -417,11 +464,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       );
                     },
                   ),
-                  const Divider(height: 1, color: Color(0xFFF1F5F9)),
+                  Divider(height: 1, color: dividerColor),
                   _buildListTile(
                     icon: Icons.palette_outlined,
                     title: 'Theme',
-                    subtitle: _themeMode,
+                    subtitle: displayThemeMode,
                     onTap: _showThemePicker,
                   ),
                 ],
@@ -437,7 +484,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     title: 'Emergency Contacts',
                     subtitle: 'Manage emergency contacts',
                     onTap: () {
-                      // Navigate to Contacts Tab (since it is index 2, we show prompt or navigate)
                       ScaffoldMessenger.of(context).showSnackBar(
                         const SnackBar(
                           content: Text('Select the Contacts tab in the bottom bar to manage guardians.'),
@@ -446,14 +492,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       );
                     },
                   ),
-                  const Divider(height: 1, color: Color(0xFFF1F5F9)),
+                  Divider(height: 1, color: dividerColor),
                   _buildListTile(
                     icon: Icons.sos_rounded,
                     title: 'SOS Settings',
                     subtitle: 'Configure emergency alert preferences',
                     onTap: () {},
                   ),
-                  const Divider(height: 1, color: Color(0xFFF1F5F9)),
+                  Divider(height: 1, color: dividerColor),
                   SwitchListTile.adaptive(
                     value: _locationSharing,
                     onChanged: (val) {
@@ -488,7 +534,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     subtitle: resident?.societyName.isNotEmpty == true ? resident!.societyName : 'Not linked',
                     onTap: () => context.go('/society'),
                   ),
-                  const Divider(height: 1, color: Color(0xFFF1F5F9)),
+                  Divider(height: 1, color: dividerColor),
                   _buildListTile(
                     icon: Icons.meeting_room_outlined,
                     title: 'Block & Flat',
@@ -497,7 +543,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         : 'Not assigned',
                     onTap: () {},
                   ),
-                  const Divider(height: 1, color: Color(0xFFF1F5F9)),
+                  Divider(height: 1, color: dividerColor),
                   _buildListTile(
                     icon: Icons.shield_outlined,
                     title: 'Security Contacts',
@@ -517,25 +563,25 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     title: 'Help Center',
                     onTap: () {},
                   ),
-                  const Divider(height: 1, color: Color(0xFFF1F5F9)),
+                  Divider(height: 1, color: dividerColor),
                   _buildListTile(
                     icon: Icons.phone_in_talk_outlined,
                     title: 'Contact Support',
                     onTap: () {},
                   ),
-                  const Divider(height: 1, color: Color(0xFFF1F5F9)),
+                  Divider(height: 1, color: dividerColor),
                   _buildListTile(
                     icon: Icons.privacy_tip_outlined,
                     title: 'Privacy Policy',
                     onTap: () {},
                   ),
-                  const Divider(height: 1, color: Color(0xFFF1F5F9)),
+                  Divider(height: 1, color: dividerColor),
                   _buildListTile(
                     icon: Icons.gavel_rounded,
                     title: 'Terms & Conditions',
                     onTap: () {},
                   ),
-                  const Divider(height: 1, color: Color(0xFFF1F5F9)),
+                  Divider(height: 1, color: dividerColor),
                   _buildListTile(
                     icon: Icons.info_outline_rounded,
                     title: 'About CareConnect',
@@ -637,11 +683,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
         ? '${resident.societyName.isNotEmpty ? resident.societyName : 'Society'} • ${resident.flatNumber.isNotEmpty ? resident.flatNumber : 'Flat'}'.trim()
         : 'No society linked';
     final isVerified = resident?.status == 'Approved';
+    final isDark = Theme.of(context).brightness == Brightness.dark;
 
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: Theme.of(context).colorScheme.surface,
         borderRadius: BorderRadius.circular(24),
         boxShadow: [
           BoxShadow(
@@ -650,7 +697,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             offset: const Offset(0, 6),
           ),
         ],
-        border: Border.all(color: Colors.grey.shade100),
+        border: Border.all(color: isDark ? Colors.transparent : Colors.grey.shade100),
       ),
       child: Row(
         children: [
@@ -659,13 +706,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
             tag: 'profile-pic',
             child: CircleAvatar(
               radius: 34,
-              backgroundColor: Colors.blue.shade100,
+              backgroundColor: isDark ? Colors.blue.shade900 : Colors.blue.shade100,
               child: Text(
                 initials.isNotEmpty ? initials : '?',
                 style: GoogleFonts.outfit(
                   fontSize: 22,
                   fontWeight: FontWeight.bold,
-                  color: const Color(0xFF2563EB),
+                  color: isDark ? Colors.blue.shade200 : const Color(0xFF2563EB),
                 ),
               ),
             ),
@@ -685,7 +732,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         style: GoogleFonts.outfit(
                           fontSize: 18,
                           fontWeight: FontWeight.bold,
-                          color: Colors.black87,
+                          color: Theme.of(context).colorScheme.onSurface,
                         ),
                         overflow: TextOverflow.ellipsis,
                       ),
@@ -721,7 +768,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   societyLine,
                   style: GoogleFonts.inter(
                     fontSize: 12,
-                    color: Colors.grey.shade500,
+                    color: isDark ? Colors.white60 : Colors.grey.shade500,
                     fontWeight: FontWeight.w500,
                   ),
                   maxLines: 1,
@@ -734,10 +781,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
           // Edit Profile Icon
           IconButton(
-            icon: const Icon(Icons.edit_note_rounded, color: Color(0xFF2563EB), size: 26),
+            icon: Icon(Icons.edit_note_rounded, color: isDark ? Colors.blue.shade300 : const Color(0xFF2563EB), size: 26),
             onPressed: () => context.go('/profile'),
             style: IconButton.styleFrom(
-              backgroundColor: Colors.blue.shade50.withValues(alpha: 0.5),
+              backgroundColor: isDark ? Colors.blue.shade900.withValues(alpha: 0.3) : Colors.blue.shade50.withValues(alpha: 0.5),
               padding: const EdgeInsets.all(10),
             ),
           ),
@@ -764,24 +811,29 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   // Rounded Card Container
   Widget _buildGroupCard({required List<Widget> children}) {
-    return Container(
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(22),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.03),
-            blurRadius: 14,
-            offset: const Offset(0, 4),
-          ),
-        ],
-        border: Border.all(color: Colors.grey.shade100),
-      ),
-      child: Column(
-        children: children,
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    return Material(
+      color: Theme.of(context).colorScheme.surface,
+      borderRadius: BorderRadius.circular(22),
+      child: Container(
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(22),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.03),
+              blurRadius: 14,
+              offset: const Offset(0, 4),
+            ),
+          ],
+          border: Border.all(color: isDark ? Colors.transparent : Colors.grey.shade100),
+        ),
+        child: Column(
+          children: children,
+        ),
       ),
     );
   }
+
 
   // List Tile item template
   Widget _buildListTile({
@@ -791,28 +843,33 @@ class _SettingsScreenState extends State<SettingsScreen> {
     Widget? trailing,
     required VoidCallback onTap,
   }) {
-    return ListTile(
-      leading: Icon(icon, color: Colors.blue.shade700, size: 22),
-      title: Text(
-        title,
-        style: GoogleFonts.inter(
-          fontWeight: FontWeight.bold,
-          fontSize: 14,
-          color: Colors.black87,
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    return Material(
+      color: Colors.transparent,
+      child: ListTile(
+        leading: Icon(icon, color: isDark ? Colors.blue.shade300 : Colors.blue.shade700, size: 22),
+        title: Text(
+          title,
+          style: GoogleFonts.inter(
+            fontWeight: FontWeight.bold,
+            fontSize: 14,
+            color: Theme.of(context).colorScheme.onSurface,
+          ),
         ),
+        subtitle: subtitle != null
+            ? Text(
+                subtitle,
+                style: GoogleFonts.inter(
+                  fontSize: 11,
+                  color: isDark ? Colors.white60 : Colors.grey.shade500,
+                ),
+              )
+            : null,
+        trailing: trailing ?? Icon(Icons.chevron_right_rounded, color: isDark ? Colors.white38 : Colors.grey),
+        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
+        onTap: onTap,
       ),
-      subtitle: subtitle != null
-          ? Text(
-              subtitle,
-              style: GoogleFonts.inter(
-                fontSize: 11,
-                color: Colors.grey.shade500,
-              ),
-            )
-          : null,
-      trailing: trailing ?? const Icon(Icons.chevron_right_rounded, color: Colors.grey),
-      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
-      onTap: onTap,
     );
+
   }
 }

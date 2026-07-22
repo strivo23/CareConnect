@@ -142,19 +142,20 @@ class _SOSMessageScreenState extends State<SOSMessageScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     return Scaffold(
-      backgroundColor: const Color(0xFFF8FAFC),
+      backgroundColor: isDark ? const Color(0xFF111418) : const Color(0xFFF8FAFC),
       appBar: AppBar(
-        backgroundColor: Colors.white,
+        backgroundColor: Theme.of(context).colorScheme.surface,
         elevation: 0,
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios_new_rounded, color: Color(0xFF1E293B)),
+          icon: Icon(Icons.arrow_back_ios_new_rounded, color: Theme.of(context).colorScheme.onSurface),
           onPressed: () => context.pop(),
         ),
         title: Text(
           'SOS Emergency Details',
           style: GoogleFonts.outfit(
-            color: const Color(0xFF1E293B),
+            color: Theme.of(context).colorScheme.onSurface,
             fontWeight: FontWeight.w800,
             fontSize: 20,
           ),
@@ -173,20 +174,21 @@ class _SOSMessageScreenState extends State<SOSMessageScreen> {
                     style: GoogleFonts.outfit(
                       fontSize: 16,
                       fontWeight: FontWeight.w800,
-                      color: const Color(0xFF0F172A),
+                      color: Theme.of(context).colorScheme.onSurface,
                     ),
                   ),
                   const SizedBox(height: 10),
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
                     decoration: BoxDecoration(
-                      color: Colors.white,
+                      color: Theme.of(context).colorScheme.surface,
                       borderRadius: BorderRadius.circular(16),
-                      border: Border.all(color: const Color(0xFFE2E8F0)),
+                      border: Border.all(color: isDark ? Colors.white10 : const Color(0xFFE2E8F0)),
                     ),
                     child: DropdownButtonHideUnderline(
                       child: DropdownButton<Map<String, dynamic>>(
                         value: _selectedCategory,
+                        dropdownColor: Theme.of(context).colorScheme.surface,
                         isExpanded: true,
                         icon: const Icon(Icons.keyboard_arrow_down_rounded, color: Color(0xFF64748B)),
                         items: _categories.map((cat) {
@@ -203,7 +205,7 @@ class _SOSMessageScreenState extends State<SOSMessageScreen> {
                                   cat['name']?.toString() ?? 'Emergency',
                                   style: GoogleFonts.inter(
                                     fontWeight: FontWeight.bold,
-                                    color: const Color(0xFF1E293B),
+                                    color: Theme.of(context).colorScheme.onSurface,
                                   ),
                                 ),
                               ],
@@ -224,7 +226,7 @@ class _SOSMessageScreenState extends State<SOSMessageScreen> {
                     style: GoogleFonts.outfit(
                       fontSize: 16,
                       fontWeight: FontWeight.w800,
-                      color: const Color(0xFF0F172A),
+                      color: Theme.of(context).colorScheme.onSurface,
                     ),
                   ),
                   const SizedBox(height: 10),
@@ -246,10 +248,10 @@ class _SOSMessageScreenState extends State<SOSMessageScreen> {
                             margin: const EdgeInsets.symmetric(horizontal: 4),
                             padding: const EdgeInsets.symmetric(vertical: 12),
                             decoration: BoxDecoration(
-                              color: isSelected ? priorityColor : Colors.white,
+                              color: isSelected ? priorityColor : Theme.of(context).colorScheme.surface,
                               borderRadius: BorderRadius.circular(12),
                               border: Border.all(
-                                color: isSelected ? priorityColor : const Color(0xFFE2E8F0),
+                                color: isSelected ? priorityColor : (isDark ? Colors.white10 : const Color(0xFFE2E8F0)),
                                 width: 1.5,
                               ),
                             ),
@@ -259,7 +261,7 @@ class _SOSMessageScreenState extends State<SOSMessageScreen> {
                                 style: GoogleFonts.inter(
                                   fontSize: 11,
                                   fontWeight: FontWeight.w800,
-                                  color: isSelected ? Colors.white : const Color(0xFF475569),
+                                  color: isSelected ? Colors.white : (isDark ? Colors.white60 : const Color(0xFF475569)),
                                 ),
                               ),
                             ),
@@ -276,15 +278,15 @@ class _SOSMessageScreenState extends State<SOSMessageScreen> {
                     style: GoogleFonts.outfit(
                       fontSize: 16,
                       fontWeight: FontWeight.w800,
-                      color: const Color(0xFF0F172A),
+                      color: Theme.of(context).colorScheme.onSurface,
                     ),
                   ),
                   const SizedBox(height: 10),
                   Container(
                     decoration: BoxDecoration(
-                      color: Colors.white,
+                      color: Theme.of(context).colorScheme.surface,
                       borderRadius: BorderRadius.circular(20),
-                      border: Border.all(color: const Color(0xFFE2E8F0)),
+                      border: Border.all(color: isDark ? Colors.white10 : const Color(0xFFE2E8F0)),
                     ),
                     padding: const EdgeInsets.all(16),
                     child: Column(
@@ -300,7 +302,7 @@ class _SOSMessageScreenState extends State<SOSMessageScreen> {
                             border: InputBorder.none,
                             counterText: '',
                           ),
-                          style: GoogleFonts.inter(fontSize: 14, color: const Color(0xFF1E293B)),
+                          style: GoogleFonts.inter(fontSize: 14, color: Theme.of(context).colorScheme.onSurface),
                           onChanged: (_) => setState(() {}),
                         ),
                         Row(
@@ -310,10 +312,10 @@ class _SOSMessageScreenState extends State<SOSMessageScreen> {
                               onTap: _listen,
                               child: CircleAvatar(
                                 radius: 22,
-                                backgroundColor: _isListening ? Colors.red.shade100 : const Color(0xFFF1F5F9),
+                                backgroundColor: _isListening ? Colors.red.shade100 : (isDark ? const Color(0xFF1E293B) : const Color(0xFFF1F5F9)),
                                 child: Icon(
                                   _isListening ? Icons.mic_rounded : Icons.mic_none_rounded,
-                                  color: _isListening ? AppTheme.danger : const Color(0xFF475569),
+                                  color: _isListening ? AppTheme.danger : (isDark ? Colors.white60 : const Color(0xFF475569)),
                                   size: 22,
                                 ),
                               ),
@@ -323,7 +325,7 @@ class _SOSMessageScreenState extends State<SOSMessageScreen> {
                               style: GoogleFonts.inter(
                                 fontSize: 12,
                                 fontWeight: FontWeight.bold,
-                                color: const Color(0xFF64748B),
+                                color: isDark ? Colors.white60 : const Color(0xFF64748B),
                               ),
                             ),
                           ],
@@ -342,7 +344,7 @@ class _SOSMessageScreenState extends State<SOSMessageScreen> {
                         style: GoogleFonts.outfit(
                           fontSize: 16,
                           fontWeight: FontWeight.w800,
-                          color: const Color(0xFF0F172A),
+                          color: Theme.of(context).colorScheme.onSurface,
                         ),
                       ),
                       IconButton(
@@ -362,9 +364,9 @@ class _SOSMessageScreenState extends State<SOSMessageScreen> {
                     width: double.infinity,
                     padding: const EdgeInsets.all(16),
                     decoration: BoxDecoration(
-                      color: Colors.white,
+                      color: Theme.of(context).colorScheme.surface,
                       borderRadius: BorderRadius.circular(20),
-                      border: Border.all(color: const Color(0xFFE2E8F0)),
+                      border: Border.all(color: isDark ? Colors.white10 : const Color(0xFFE2E8F0)),
                     ),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
@@ -374,9 +376,9 @@ class _SOSMessageScreenState extends State<SOSMessageScreen> {
                           height: 150,
                           width: double.infinity,
                           decoration: BoxDecoration(
-                            color: const Color(0xFFFEF2F2),
+                            color: isDark ? const Color(0xFF3B1D20) : const Color(0xFFFEF2F2),
                             borderRadius: BorderRadius.circular(16),
-                            border: Border.all(color: const Color(0xFFFEE2E2)),
+                            border: Border.all(color: isDark ? const Color(0xFF4A1D20) : const Color(0xFFFEE2E2)),
                           ),
                           child: Stack(
                             alignment: Alignment.center,
@@ -400,14 +402,14 @@ class _SOSMessageScreenState extends State<SOSMessageScreen> {
                                     'Map Coordinates Captured',
                                     style: GoogleFonts.inter(
                                       fontWeight: FontWeight.bold,
-                                      color: const Color(0xFF991B1B),
+                                      color: isDark ? const Color(0xFFFCA5A5) : const Color(0xFF991B1B),
                                       fontSize: 12,
                                     ),
                                   ),
                                   Text(
                                     'Lat: ${_currentLat.toStringAsFixed(5)}, Lng: ${_currentLng.toStringAsFixed(5)}',
                                     style: GoogleFonts.inter(
-                                      color: const Color(0xFF7F1D1D),
+                                      color: isDark ? const Color(0xFFFCA5A5) : const Color(0xFF7F1D1D),
                                       fontSize: 10.5,
                                       fontWeight: FontWeight.w600,
                                     ),
@@ -423,7 +425,7 @@ class _SOSMessageScreenState extends State<SOSMessageScreen> {
                           style: GoogleFonts.inter(
                             fontSize: 11,
                             fontWeight: FontWeight.bold,
-                            color: const Color(0xFF64748B),
+                            color: isDark ? Colors.white60 : const Color(0xFF64748B),
                           ),
                         ),
                         const SizedBox(height: 4),
@@ -432,7 +434,7 @@ class _SOSMessageScreenState extends State<SOSMessageScreen> {
                           style: GoogleFonts.inter(
                             fontSize: 12.5,
                             fontWeight: FontWeight.w600,
-                            color: const Color(0xFF1E293B),
+                            color: Theme.of(context).colorScheme.onSurface,
                             height: 1.4,
                           ),
                         ),

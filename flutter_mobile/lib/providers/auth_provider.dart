@@ -14,13 +14,34 @@ class AuthProvider extends ChangeNotifier {
   bool _isReady = false;
   bool _isLoading = false;
   bool _useDarkTheme = false;
+  String _themeMode = 'system';
   String _languageCode = 'en';
   AppUser? _user;
   String? _errorMessage;
 
   bool get isReady => _isReady;
   bool get isLoading => _isLoading;
-  bool get useDarkTheme => _useDarkTheme;
+
+  String get themeModeString => _themeMode;
+  ThemeMode get themeMode {
+    switch (_themeMode) {
+      case 'light':
+        return ThemeMode.light;
+      case 'dark':
+        return ThemeMode.dark;
+      case 'system':
+      default:
+        return ThemeMode.system;
+    }
+  }
+
+  bool get useDarkTheme {
+    if (_themeMode == 'dark') return true;
+    if (_themeMode == 'light') return false;
+    final brightness = WidgetsBinding.instance.platformDispatcher.platformBrightness;
+    return brightness == Brightness.dark;
+  }
+
   String get languageCode => _languageCode;
   AppUser? get user => _user;
   String? get errorMessage => _errorMessage;
@@ -36,7 +57,8 @@ class AuthProvider extends ChangeNotifier {
     final languageCode = await LocalStorageService.instance.getString(AppConstants.languageCodeKey);
 
     _user = storedUser;
-    _useDarkTheme = themeMode == 'dark';
+    _themeMode = themeMode ?? 'system';
+    _useDarkTheme = _themeMode == 'dark';
     _languageCode = languageCode ?? 'en';
     _isReady = true;
     notifyListeners();
@@ -66,10 +88,17 @@ class AuthProvider extends ChangeNotifier {
     int? societyId,
     int? blockId,
     int? flatId,
+    int? relationship,
+    String? skills,
+    String? availability,
+    String? serviceArea,
+    String? shift,
+    String? employeeId,
+    int? assignedSocietyId,
   }) async {
     _setLoading(true);
     try {
-      final session = await _repository.register(
+      await _repository.register(
         name: name,
         email: email,
         phoneNumber: phoneNumber,
@@ -78,8 +107,14 @@ class AuthProvider extends ChangeNotifier {
         societyId: societyId,
         blockId: blockId,
         flatId: flatId,
+        relationship: relationship,
+        skills: skills,
+        availability: availability,
+        serviceArea: serviceArea,
+        shift: shift,
+        employeeId: employeeId,
+        assignedSocietyId: assignedSocietyId,
       );
-      _user = session.user.email.isEmpty ? _user : session.user;
       _errorMessage = null;
       return true;
     } catch (error) {
@@ -120,9 +155,65 @@ class AuthProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  Future<bool> sendOTP(String email) async {
+    _setLoading(true);
+    try {
+      final success = await _repository.sendOTP(email: email);
+      _errorMessage = null;
+      return success;
+    } catch (error) {
+      _errorMessage = _extractMessage(error);
+      return false;
+    } finally {
+      _setLoading(false);
+    }
+  }
+
+  Future<bool> verifyOTP(String email, String otp) async {
+    _setLoading(true);
+    try {
+      final success = await _repository.verifyOTP(email: email, otp: otp);
+      _errorMessage = null;
+      return success;
+    } catch (error) {
+      _errorMessage = _extractMessage(error);
+      return false;
+    } finally {
+      _setLoading(false);
+    }
+  }
+
+  Future<bool> resendOTP(String email) async {
+    _setLoading(true);
+    try {
+      final success = await _repository.resendOTP(email: email);
+      _errorMessage = null;
+      return success;
+    } catch (error) {
+      _errorMessage = _extractMessage(error);
+      return false;
+    } finally {
+      _setLoading(false);
+    }
+  }
+
   Future<void> toggleTheme(bool value) async {
     _useDarkTheme = value;
-    await LocalStorageService.instance.saveString(AppConstants.themeModeKey, value ? 'dark' : 'light');
+    _themeMode = value ? 'dark' : 'light';
+    await LocalStorageService.instance.saveString(AppConstants.themeModeKey, _themeMode);
+    notifyListeners();
+  }
+
+  Future<void> setThemeMode(String mode) async {
+    if (mode == 'System' || mode == 'system') {
+      _themeMode = 'system';
+    } else if (mode == 'Dark' || mode == 'dark') {
+      _themeMode = 'dark';
+    } else {
+      _themeMode = 'light';
+    }
+    _useDarkTheme = _themeMode == 'dark';
+    await LocalStorageService.instance.saveString(AppConstants.themeModeKey, _themeMode);
     notifyListeners();
   }
 
@@ -143,6 +234,29 @@ class AuthProvider extends ChangeNotifier {
   }
 
   String _extractMessage(Object error) {
+    dynamic err = error;
+    try {
+      if (err.response != null && err.response.data != null) {
+        final data = err.response.data;
+        if (data is Map) {
+          if (data.containsKey('detail')) {
+            return data['detail'].toString();
+          }
+          final messages = <String>[];
+          data.forEach((key, val) {
+            if (val is List) {
+              messages.add('${key}: ${val.join(", ")}');
+            } else {
+              messages.add('${key}: $val');
+            }
+          });
+          if (messages.isNotEmpty) {
+            return messages.join('\n');
+          }
+        }
+      }
+    } catch (_) {}
+
     final text = error.toString();
     if (text.contains('401')) {
       return 'Invalid email or password';
@@ -150,3 +264,4 @@ class AuthProvider extends ChangeNotifier {
     return 'Something went wrong. Please try again.';
   }
 }
+

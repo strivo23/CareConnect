@@ -9,6 +9,8 @@ import '../../models/notification_model.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/notifications_provider.dart';
 
+import 'widgets/emergency_location_widget.dart';
+
 class SOSDetailScreen extends StatefulWidget {
   const SOSDetailScreen({super.key, required this.notification});
 
@@ -20,8 +22,18 @@ class SOSDetailScreen extends StatefulWidget {
 
 class _SOSDetailScreenState extends State<SOSDetailScreen> {
   bool _isLoading = false;
+
+  bool _isFetchingDetails = false;
   String? _currentStatus;
   String? _errorMessage;
+
+  String? _residentName;
+  String? _categoryName;
+  String? _message;
+  double? _latitude;
+  double? _longitude;
+  String? _address;
+  DateTime? _createdAt;
 
   @override
   void initState() {
@@ -30,7 +42,57 @@ class _SOSDetailScreenState extends State<SOSDetailScreen> {
     if (_currentStatus == null || _currentStatus!.isEmpty) {
       _currentStatus = 'Pending';
     }
+    _residentName = widget.notification.residentName;
+    _categoryName = widget.notification.emergencyCategory;
+    _message = widget.notification.incidentMessage;
+    _latitude = widget.notification.latitude;
+    _longitude = widget.notification.longitude;
+    _address = widget.notification.address;
+    _createdAt = widget.notification.createdAt;
+
+    _fetchFullIncidentDetails();
   }
+
+  Future<void> _fetchFullIncidentDetails() async {
+    final incidentId = widget.notification.incidentId;
+    if (incidentId <= 0) return;
+
+    setState(() {
+      _isFetchingDetails = true;
+    });
+
+    try {
+      final response = await ApiClient.instance.get('/api/sos/incidents/$incidentId/');
+      if (response.statusCode == 200 && response.data != null) {
+        final data = response.data as Map<String, dynamic>;
+        setState(() {
+          _residentName = data['resident_name']?.toString() ?? _residentName;
+          _categoryName = data['category_name']?.toString() ?? _categoryName;
+          _message = data['message']?.toString() ?? _message;
+          _currentStatus = data['status']?.toString() ?? _currentStatus;
+          _address = data['resolved_address']?.toString() ?? data['address']?.toString() ?? _address;
+          if (data['latitude'] != null) {
+            _latitude = double.tryParse(data['latitude'].toString());
+          }
+          if (data['longitude'] != null) {
+            _longitude = double.tryParse(data['longitude'].toString());
+          }
+          if (data['created_at'] != null) {
+            _createdAt = DateTime.tryParse(data['created_at'].toString()) ?? _createdAt;
+          }
+        });
+      }
+    } catch (e) {
+      debugPrint('[SOSDetailScreen] Failed to fetch incident details: $e');
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isFetchingDetails = false;
+        });
+      }
+    }
+  }
+
 
   Future<void> _updateStatus(String actionPath, String targetStatus) async {
     setState(() {
@@ -77,6 +139,102 @@ class _SOSDetailScreenState extends State<SOSDetailScreen> {
     }
   }
 
+  Future<void> _handleAcceptWithETA() async {
+    final String? eta = await showDialog<String>(
+      context: context,
+      builder: (dialogCtx) {
+        return AlertDialog(
+          title: Text(
+            'Confirm Acceptance & ETA',
+            style: GoogleFonts.outfit(fontWeight: FontWeight.bold),
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Please select your estimated time of arrival (ETA) to assist:',
+                style: GoogleFonts.inter(fontSize: 14),
+              ),
+              const SizedBox(height: 16),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: ['5 mins', '10 mins', '15 mins', '30 mins'].map((timeStr) {
+                  return ElevatedButton(
+                    onPressed: () => Navigator.pop(dialogCtx, timeStr),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Theme.of(context).colorScheme.primaryContainer,
+                      foregroundColor: Theme.of(context).colorScheme.onPrimaryContainer,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    ),
+                    child: Text(timeStr),
+                  );
+                }).toList(),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogCtx, null),
+              child: Text('Cancel', style: GoogleFonts.inter(color: Colors.grey)),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (eta == null) return; // User cancelled
+
+    setState(() {
+      _isLoading = true;
+      _errorMessage = null;
+    });
+
+    try {
+      final response = await ApiClient.instance.patch(
+        '/api/sos/accept/${widget.notification.incidentId}/',
+        data: {},
+      );
+
+      if (response.statusCode == 200) {
+        try {
+          await ApiClient.instance.post(
+            '/api/sos/${widget.notification.incidentId}/message/',
+            data: {'message': 'Accepted. ETA: $eta.'},
+          );
+        } catch (_) {}
+
+        setState(() {
+          _currentStatus = 'Accepted';
+        });
+
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Accepted SOS. ETA: $eta.'),
+              backgroundColor: AppTheme.success,
+              behavior: SnackBarBehavior.floating,
+            ),
+          );
+        }
+        context.read<NotificationsProvider>().pollGuardianNotifications();
+      } else {
+        setState(() {
+          _errorMessage = response.data['detail']?.toString() ?? 'Failed to accept SOS.';
+        });
+      }
+    } catch (e) {
+      setState(() {
+        _errorMessage = 'Error accepting SOS alert: $e';
+      });
+    } finally {
+      setState(() {
+        _isLoading = false;
+      });
+    }
+  }
+
   Color _getStatusColor(String status) {
     switch (status) {
       case 'Pending':
@@ -98,22 +256,23 @@ class _SOSDetailScreenState extends State<SOSDetailScreen> {
   Widget build(BuildContext context) {
     final user = context.watch<AuthProvider>().user;
     final role = user?.role ?? 'RESIDENT';
-    final isGuardianOrStaff = role == 'ADMIN' || role == 'SECURITY' || role == 'SOCIETY_MANAGER' || role == 'STAFF';
+    final isGuardianOrStaff = role == 'ADMIN' || role == 'SECURITY' || role == 'SOCIETY_MANAGER' || role == 'STAFF' || role == 'VOLUNTEER';
     final isOwner = user != null && widget.notification.message.contains(user.fullName.split(' ').first);
+    final isDark = Theme.of(context).brightness == Brightness.dark;
 
     return Scaffold(
-      backgroundColor: const Color(0xFFF8FAFC),
+      backgroundColor: isDark ? const Color(0xFF111418) : const Color(0xFFF8FAFC),
       appBar: AppBar(
-        backgroundColor: Colors.white,
+        backgroundColor: Theme.of(context).colorScheme.surface,
         elevation: 0,
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios_new_rounded, color: Color(0xFF1E293B)),
+          icon: Icon(Icons.arrow_back_ios_new_rounded, color: Theme.of(context).colorScheme.onSurface),
           onPressed: () => Navigator.pop(context),
         ),
         title: Text(
           'SOS Alert Details',
           style: GoogleFonts.outfit(
-            color: const Color(0xFF1E293B),
+            color: Theme.of(context).colorScheme.onSurface,
             fontWeight: FontWeight.bold,
             fontSize: 20,
           ),
@@ -130,7 +289,7 @@ class _SOSDetailScreenState extends State<SOSDetailScreen> {
               width: double.infinity,
               padding: const EdgeInsets.all(18),
               decoration: BoxDecoration(
-                color: Colors.white,
+                color: Theme.of(context).colorScheme.surface,
                 borderRadius: BorderRadius.circular(20),
                 boxShadow: [
                   BoxShadow(
@@ -139,7 +298,7 @@ class _SOSDetailScreenState extends State<SOSDetailScreen> {
                     offset: const Offset(0, 4),
                   ),
                 ],
-                border: Border.all(color: Colors.grey.shade100),
+                border: Border.all(color: isDark ? Colors.white10 : Colors.grey.shade100),
               ),
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -152,7 +311,7 @@ class _SOSDetailScreenState extends State<SOSDetailScreen> {
                         style: GoogleFonts.inter(
                           fontSize: 12,
                           fontWeight: FontWeight.bold,
-                          color: Colors.grey.shade400,
+                          color: isDark ? Colors.white38 : Colors.grey.shade400,
                         ),
                       ),
                       const SizedBox(height: 4),
@@ -161,7 +320,7 @@ class _SOSDetailScreenState extends State<SOSDetailScreen> {
                         style: GoogleFonts.outfit(
                           fontSize: 22,
                           fontWeight: FontWeight.w800,
-                          color: const Color(0xFF1E293B),
+                          color: Theme.of(context).colorScheme.onSurface,
                         ),
                       ),
                     ],
@@ -191,7 +350,7 @@ class _SOSDetailScreenState extends State<SOSDetailScreen> {
               width: double.infinity,
               padding: const EdgeInsets.all(20),
               decoration: BoxDecoration(
-                color: Colors.white,
+                color: Theme.of(context).colorScheme.surface,
                 borderRadius: BorderRadius.circular(24),
                 boxShadow: [
                   BoxShadow(
@@ -200,7 +359,7 @@ class _SOSDetailScreenState extends State<SOSDetailScreen> {
                     offset: const Offset(0, 4),
                   ),
                 ],
-                border: Border.all(color: Colors.grey.shade100),
+                border: Border.all(color: isDark ? Colors.white10 : Colors.grey.shade100),
               ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -210,42 +369,35 @@ class _SOSDetailScreenState extends State<SOSDetailScreen> {
                     style: GoogleFonts.outfit(
                       fontSize: 16,
                       fontWeight: FontWeight.w800,
-                      color: const Color(0xFF1E293B),
+                      color: Theme.of(context).colorScheme.onSurface,
                     ),
                   ),
-                  const Divider(height: 30, color: Color(0xFFF1F5F9)),
+                  Divider(height: 30, color: isDark ? Colors.white10 : const Color(0xFFF1F5F9)),
 
                   _buildDetailRow(
                     label: 'Resident Name',
-                    value: widget.notification.residentName.isNotEmpty
-                        ? widget.notification.residentName
+                    value: (_residentName != null && _residentName!.isNotEmpty)
+                        ? _residentName!
                         : 'Unknown Resident',
                     icon: Icons.person_rounded,
                   ),
                   _buildDetailRow(
                     label: 'Emergency Category',
-                    value: widget.notification.emergencyCategory.isNotEmpty
-                        ? widget.notification.emergencyCategory
+                    value: (_categoryName != null && _categoryName!.isNotEmpty)
+                        ? _categoryName!
                         : 'SOS Emergency',
                     icon: Icons.emergency_rounded,
                     iconColor: AppTheme.danger,
                   ),
                   _buildDetailRow(
                     label: 'Triggered Time',
-                    value: DateFormat('dd MMM yyyy, hh:mm a').format(widget.notification.createdAt),
+                    value: DateFormat('dd MMM yyyy, hh:mm a').format(_createdAt ?? widget.notification.createdAt),
                     icon: Icons.access_time_filled_rounded,
                   ),
                   _buildDetailRow(
-                    label: 'Location Coordinates',
-                    value: widget.notification.location.isNotEmpty
-                        ? widget.notification.location
-                        : 'Lat 40.7128° N, Long 74.0060° W',
-                    icon: Icons.my_location_rounded,
-                  ),
-                  _buildDetailRow(
                     label: 'Description Message',
-                    value: widget.notification.incidentMessage.isNotEmpty
-                        ? widget.notification.incidentMessage
+                    value: (_message != null && _message!.isNotEmpty)
+                        ? _message!
                         : 'Immediate help requested.',
                     icon: Icons.chat_bubble_rounded,
                     isLast: true,
@@ -254,6 +406,16 @@ class _SOSDetailScreenState extends State<SOSDetailScreen> {
               ),
             ),
             const SizedBox(height: 20),
+
+            // Emergency Location Widget (Map, Address, Coordinates, Open in Google Maps)
+            EmergencyLocationWidget(
+              latitude: _latitude ?? widget.notification.latitude,
+              longitude: _longitude ?? widget.notification.longitude,
+              address: _address ?? widget.notification.address,
+            ),
+
+            const SizedBox(height: 20),
+
 
             if (_errorMessage != null) ...[
               Container(
@@ -286,7 +448,7 @@ class _SOSDetailScreenState extends State<SOSDetailScreen> {
               if (isGuardianOrStaff) ...[
                 if (_currentStatus == 'Pending')
                   ElevatedButton.icon(
-                    onPressed: () => _updateStatus('accept', 'Accepted'),
+                    onPressed: () => _handleAcceptWithETA(),
                     icon: const Icon(Icons.check_circle_rounded, color: Colors.white),
                     label: Text(
                       'Accept SOS Alert',
@@ -365,15 +527,16 @@ class _SOSDetailScreenState extends State<SOSDetailScreen> {
     Color? iconColor,
     bool isLast = false,
   }) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     return Column(
       children: [
         Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             CircleAvatar(
-              backgroundColor: const Color(0xFFF1F5F9),
+              backgroundColor: isDark ? const Color(0xFF1E293B) : const Color(0xFFF1F5F9),
               radius: 18,
-              child: Icon(icon, color: iconColor ?? const Color(0xFF64748B), size: 18),
+              child: Icon(icon, color: iconColor ?? (isDark ? Colors.white60 : const Color(0xFF64748B)), size: 18),
             ),
             const SizedBox(width: 14),
             Expanded(
@@ -385,7 +548,7 @@ class _SOSDetailScreenState extends State<SOSDetailScreen> {
                     style: GoogleFonts.inter(
                       fontSize: 11,
                       fontWeight: FontWeight.bold,
-                      color: Colors.grey.shade400,
+                      color: isDark ? Colors.white38 : Colors.grey.shade400,
                     ),
                   ),
                   const SizedBox(height: 3),
@@ -394,7 +557,7 @@ class _SOSDetailScreenState extends State<SOSDetailScreen> {
                     style: GoogleFonts.inter(
                       fontSize: 14,
                       fontWeight: FontWeight.w600,
-                      color: const Color(0xFF334155),
+                      color: Theme.of(context).colorScheme.onSurface,
                       height: 1.3,
                     ),
                   ),
@@ -403,7 +566,7 @@ class _SOSDetailScreenState extends State<SOSDetailScreen> {
             ),
           ],
         ),
-        if (!isLast) const Divider(height: 24, color: Color(0xFFF1F5F9)),
+        if (!isLast) Divider(height: 24, color: isDark ? Colors.white10 : const Color(0xFFF1F5F9)),
       ],
     );
   }

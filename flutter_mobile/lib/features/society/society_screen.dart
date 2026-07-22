@@ -56,15 +56,16 @@ class _SocietyScreenState extends State<SocietyScreen> {
   @override
   Widget build(BuildContext context) {
     final resident = context.watch<AppStateProvider>().residentProfile;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
 
     return Scaffold(
-      backgroundColor: Colors.grey.shade50,
+      backgroundColor: isDark ? const Color(0xFF111418) : Colors.grey.shade50,
       appBar: AppBar(
-        backgroundColor: Colors.white,
+        backgroundColor: Theme.of(context).colorScheme.surface,
         elevation: 0,
         leading: Navigator.canPop(context)
             ? IconButton(
-                icon: const Icon(Icons.arrow_back_ios_new_rounded, color: Colors.black87, size: 20),
+                icon: Icon(Icons.arrow_back_ios_new_rounded, color: Theme.of(context).colorScheme.onSurface, size: 20),
                 onPressed: () => Navigator.maybePop(context),
               )
             : null,
@@ -74,7 +75,7 @@ class _SocietyScreenState extends State<SocietyScreen> {
             Text(
               'Society',
               style: GoogleFonts.outfit(
-                color: Colors.black87,
+                color: Theme.of(context).colorScheme.onSurface,
                 fontSize: 22,
                 fontWeight: FontWeight.w900,
               ),
@@ -82,7 +83,7 @@ class _SocietyScreenState extends State<SocietyScreen> {
             Text(
               'Your community directory',
               style: GoogleFonts.inter(
-                color: Colors.grey.shade600,
+                color: isDark ? Colors.white60 : Colors.grey.shade600,
                 fontSize: 12,
                 fontWeight: FontWeight.w500,
               ),
@@ -139,6 +140,7 @@ class _SocietyScreenState extends State<SocietyScreen> {
   }
 
   Widget _buildSectionTitle(String title) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     return Padding(
       padding: const EdgeInsets.only(left: 4, bottom: 10),
       child: Text(
@@ -146,7 +148,7 @@ class _SocietyScreenState extends State<SocietyScreen> {
         style: GoogleFonts.outfit(
           fontSize: 11,
           fontWeight: FontWeight.w900,
-          color: Colors.grey.shade400,
+          color: isDark ? Colors.white30 : Colors.grey.shade400,
           letterSpacing: 1.2,
         ),
       ),
@@ -154,13 +156,14 @@ class _SocietyScreenState extends State<SocietyScreen> {
   }
 
   Widget _buildErrorCard() {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     return Container(
       margin: const EdgeInsets.only(bottom: 16),
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: const Color(0xFFFFF1F2),
+        color: isDark ? const Color(0xFF2D1418) : const Color(0xFFFFF1F2),
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: const Color(0xFFFFCDD2)),
+        border: Border.all(color: isDark ? const Color(0xFF4C1D24) : const Color(0xFFFFCDD2)),
       ),
       child: Row(
         children: [
@@ -169,7 +172,7 @@ class _SocietyScreenState extends State<SocietyScreen> {
           Expanded(
             child: Text(
               _errorMessage!,
-              style: GoogleFonts.inter(color: const Color(0xFFEF4444), fontSize: 13, fontWeight: FontWeight.w600),
+              style: GoogleFonts.inter(color: isDark ? Colors.redAccent : const Color(0xFFEF4444), fontSize: 13, fontWeight: FontWeight.w600),
             ),
           ),
           TextButton(
@@ -303,11 +306,12 @@ class _SocietyScreenState extends State<SocietyScreen> {
   }
 
   Widget _buildBlockCard(BlockTowerModel block) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     return Container(
       margin: const EdgeInsets.only(bottom: 10),
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: Theme.of(context).colorScheme.surface,
         borderRadius: BorderRadius.circular(18),
         boxShadow: [
           BoxShadow(
@@ -316,14 +320,14 @@ class _SocietyScreenState extends State<SocietyScreen> {
             offset: const Offset(0, 4),
           ),
         ],
-        border: Border.all(color: Colors.grey.shade100),
+        border: Border.all(color: isDark ? Colors.white10 : Colors.grey.shade100),
       ),
       child: Row(
         children: [
           Container(
             padding: const EdgeInsets.all(10),
             decoration: BoxDecoration(
-              color: const Color(0xFFEFF6FF),
+              color: isDark ? const Color(0xFF1E293B) : const Color(0xFFEFF6FF),
               borderRadius: BorderRadius.circular(12),
             ),
             child: const Icon(Icons.domain_rounded, color: const Color(0xFF2563EB), size: 22),
@@ -335,11 +339,11 @@ class _SocietyScreenState extends State<SocietyScreen> {
               children: [
                 Text(
                   block.name,
-                  style: GoogleFonts.outfit(fontSize: 16, fontWeight: FontWeight.w800, color: Colors.black87),
+                  style: GoogleFonts.outfit(fontSize: 16, fontWeight: FontWeight.w800, color: Theme.of(context).colorScheme.onSurface),
                 ),
                 Text(
                   '${block.totalFloors} floors',
-                  style: GoogleFonts.inter(fontSize: 12, color: Colors.grey.shade500, fontWeight: FontWeight.w600),
+                  style: GoogleFonts.inter(fontSize: 12, color: isDark ? Colors.white60 : Colors.grey.shade500, fontWeight: FontWeight.w600),
                 ),
               ],
             ),
@@ -351,11 +355,12 @@ class _SocietyScreenState extends State<SocietyScreen> {
   }
 
   Widget _buildSocietyCard(SocietyModel society) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
       padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: Theme.of(context).colorScheme.surface,
         borderRadius: BorderRadius.circular(22),
         boxShadow: [
           BoxShadow(
@@ -364,7 +369,7 @@ class _SocietyScreenState extends State<SocietyScreen> {
             offset: const Offset(0, 5),
           ),
         ],
-        border: Border.all(color: Colors.grey.shade100),
+        border: Border.all(color: isDark ? Colors.white10 : Colors.grey.shade100),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -374,7 +379,7 @@ class _SocietyScreenState extends State<SocietyScreen> {
               Container(
                 padding: const EdgeInsets.all(10),
                 decoration: BoxDecoration(
-                  color: const Color(0xFFEFF6FF),
+                  color: isDark ? const Color(0xFF1E293B) : const Color(0xFFEFF6FF),
                   borderRadius: BorderRadius.circular(12),
                 ),
                 child: const Icon(Icons.location_city_rounded, color: const Color(0xFF2563EB), size: 22),
@@ -386,11 +391,11 @@ class _SocietyScreenState extends State<SocietyScreen> {
                   children: [
                     Text(
                       society.name,
-                      style: GoogleFonts.outfit(fontSize: 17, fontWeight: FontWeight.w800, color: Colors.black87),
+                      style: GoogleFonts.outfit(fontSize: 17, fontWeight: FontWeight.w800, color: Theme.of(context).colorScheme.onSurface),
                     ),
                     Text(
                       '${society.city}, ${society.state}',
-                      style: GoogleFonts.inter(fontSize: 12, color: Colors.grey.shade500, fontWeight: FontWeight.w600),
+                      style: GoogleFonts.inter(fontSize: 12, color: isDark ? Colors.white60 : Colors.grey.shade500, fontWeight: FontWeight.w600),
                     ),
                   ],
                 ),
@@ -398,7 +403,9 @@ class _SocietyScreenState extends State<SocietyScreen> {
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                 decoration: BoxDecoration(
-                  color: society.status == 'Active' ? const Color(0xFFECFDF5) : Colors.orange.shade50,
+                  color: society.status == 'Active'
+                      ? (isDark ? const Color(0xFF0F2E1E) : const Color(0xFFECFDF5))
+                      : (isDark ? const Color(0xFF3B250F) : Colors.orange.shade50),
                   borderRadius: BorderRadius.circular(20),
                 ),
                 child: Text(
@@ -413,7 +420,7 @@ class _SocietyScreenState extends State<SocietyScreen> {
             ],
           ),
           const SizedBox(height: 14),
-          const Divider(height: 1, color: Color(0xFFF1F5F9)),
+          Divider(height: 1, color: isDark ? Colors.white10 : const Color(0xFFF1F5F9)),
           const SizedBox(height: 12),
           Row(
             children: [
@@ -435,11 +442,11 @@ class _SocietyScreenState extends State<SocietyScreen> {
                   },
                   child: Row(
                     children: [
-                      Icon(Icons.phone_rounded, size: 14, color: Colors.grey.shade500),
+                      Icon(Icons.phone_rounded, size: 14, color: isDark ? Colors.white60 : Colors.grey.shade500),
                       const SizedBox(width: 4),
                       Text(
                         society.contactNumber,
-                        style: GoogleFonts.inter(fontSize: 12, color: Colors.grey.shade500, fontWeight: FontWeight.w600),
+                        style: GoogleFonts.inter(fontSize: 12, color: isDark ? Colors.white60 : Colors.grey.shade500, fontWeight: FontWeight.w600),
                       ),
                     ],
                   ),
@@ -451,12 +458,12 @@ class _SocietyScreenState extends State<SocietyScreen> {
             const SizedBox(height: 10),
             Row(
               children: [
-                Icon(Icons.location_on_rounded, size: 14, color: Colors.grey.shade400),
+                Icon(Icons.location_on_rounded, size: 14, color: isDark ? Colors.white38 : Colors.grey.shade400),
                 const SizedBox(width: 4),
                 Expanded(
                   child: Text(
                     '${society.address}, ${society.pincode}',
-                    style: GoogleFonts.inter(fontSize: 11.5, color: Colors.grey.shade500, fontWeight: FontWeight.w500),
+                    style: GoogleFonts.inter(fontSize: 11.5, color: isDark ? Colors.white60 : Colors.grey.shade500, fontWeight: FontWeight.w500),
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                   ),
@@ -476,32 +483,33 @@ class _SocietyScreenState extends State<SocietyScreen> {
         const SizedBox(width: 5),
         Text(
           label,
-          style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w700, color: Colors.black87),
+          style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w700, color: Theme.of(context).colorScheme.onSurface),
         ),
       ],
     );
   }
 
   Widget _buildEmptyState() {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     return Container(
       padding: const EdgeInsets.all(32),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: Theme.of(context).colorScheme.surface,
         borderRadius: BorderRadius.circular(22),
-        border: Border.all(color: Colors.grey.shade100),
+        border: Border.all(color: isDark ? Colors.white10 : Colors.grey.shade100),
       ),
       child: Column(
         children: [
-          Icon(Icons.apartment_rounded, size: 56, color: Colors.grey.shade300),
+          Icon(Icons.apartment_rounded, size: 56, color: isDark ? Colors.white30 : Colors.grey.shade300),
           const SizedBox(height: 16),
           Text(
             'No societies found',
-            style: GoogleFonts.outfit(fontSize: 18, fontWeight: FontWeight.w700, color: Colors.grey.shade600),
+            style: GoogleFonts.outfit(fontSize: 18, fontWeight: FontWeight.w700, color: Theme.of(context).colorScheme.onSurface),
           ),
           const SizedBox(height: 8),
           Text(
             'Your society will appear here once added by the admin.',
-            style: GoogleFonts.inter(fontSize: 13, color: Colors.grey.shade500),
+            style: GoogleFonts.inter(fontSize: 13, color: isDark ? Colors.white60 : Colors.grey.shade500),
             textAlign: TextAlign.center,
           ),
           const SizedBox(height: 16),

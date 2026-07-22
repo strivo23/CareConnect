@@ -44,6 +44,7 @@ from .permissions import (
     ROLE_ADMIN,
     ROLE_SOCIETY_MANAGER,
     ROLE_SECURITY,
+    ROLE_VOLUNTEER,
 )
 from .services import SOSService
 
@@ -55,10 +56,11 @@ from .services import SOSService
 def _get_scoped_queryset(user):
     """Return incidents visible to *user* based on their role."""
     qs = SOSIncident.objects.select_related("resident", "category")
-    if user.role in (ROLE_ADMIN, ROLE_SOCIETY_MANAGER, ROLE_SECURITY):
+    if user.role in (ROLE_ADMIN, ROLE_SOCIETY_MANAGER, ROLE_SECURITY, "STAFF", "VOLUNTEER", "GUARDIAN"):
         return qs.all()
-    # Residents only see their own
+    # Residents list only their own incidents
     return qs.filter(resident=user)
+
 
 
 # ---------------------------------------------------------------------------
@@ -134,7 +136,8 @@ class SOSIncidentDetailView(generics.RetrieveAPIView):
         # Guard against drf-spectacular schema introspection with AnonymousUser
         if getattr(self, "swagger_fake_view", False):
             return SOSIncident.objects.none()
-        return _get_scoped_queryset(self.request.user)
+        return SOSIncident.objects.select_related("resident", "category").all()
+
 
 
 # ---------------------------------------------------------------------------
@@ -183,8 +186,12 @@ class SOSSendView(generics.CreateAPIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def create(self, request, *args, **kwargs):
+        print(f"[SOS DISPATCH REQUEST JSON] {request.data}", flush=True)
         serializer = self.get_serializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
+        print(f"[SOS SERIALIZER INITIAL DATA] {serializer.initial_data}", flush=True)
+        if not serializer.is_valid():
+            print(f"[SOS SERIALIZER ERRORS] {serializer.errors}", flush=True)
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
         incident = SOSService.create_incident(
             user=request.user,
@@ -193,6 +200,8 @@ class SOSSendView(generics.CreateAPIView):
 
         response_data = SOSIncidentSerializer(incident, context={"request": request}).data
         return Response(response_data, status=status.HTTP_201_CREATED)
+
+
 
 
 # ---------------------------------------------------------------------------
@@ -204,7 +213,7 @@ class _BaseStatusUpdateView(APIView):
     Base class for status-change action views.
     Subclasses define `target_status` and `permission_classes`.
     """
-    permission_classes = [permissions.IsAuthenticated, IsSocietyManagerOrAdmin]
+    permission_classes = [permissions.IsAuthenticated]
     target_status: str = ""
 
     def patch(self, request, pk):
@@ -220,9 +229,9 @@ class _BaseStatusUpdateView(APIView):
                 status=status.HTTP_404_NOT_FOUND,
             )
 
-        # Security may also update status
+        # Security and Volunteer may also update status
         user = request.user
-        if user.role not in (ROLE_ADMIN, ROLE_SOCIETY_MANAGER, ROLE_SECURITY):
+        if user.role not in (ROLE_ADMIN, ROLE_SOCIETY_MANAGER, ROLE_SECURITY, ROLE_VOLUNTEER):
             return Response(
                 {"detail": "You do not have permission to perform this action."},
                 status=status.HTTP_403_FORBIDDEN,
@@ -424,3 +433,118 @@ class ReverseGeocodeAPIView(APIView):
 
         address = SOSService.reverse_geocode(lat_dec, lon_dec)
         return Response({"address": address}, status=status.HTTP_200_OK)
+
+
+from rest_framework import viewsets
+from .models import EscalationConfig, EscalationLog
+from .serializers import EscalationConfigSerializer, EscalationLogSerializer
+import math
+
+def haversine(lat1, lon1, lat2, lon2):
+    # distance in meters
+    R = 6371000  # radius of Earth in meters
+    phi1 = math.radians(float(lat1))
+    phi2 = math.radians(float(lat2))
+    dphi = math.radians(float(lat2 - lat1))
+    dlambda = math.radians(float(lon2 - lon1))
+    a = math.sin(dphi/2)**2 + math.cos(phi1)*math.cos(phi2)*math.sin(dlambda/2)**2
+    c = 2 * math.atan2(math.sqrt(a), math.sqrt(1-a))
+    return R * c
+
+
+class EscalationConfigViewSet(viewsets.ModelViewSet):
+    queryset = EscalationConfig.objects.all()
+    serializer_class = EscalationConfigSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+
+class EscalationLogViewSet(viewsets.ReadOnlyModelViewSet):
+    queryset = EscalationLog.objects.all().order_by('-created_at')
+    serializer_class = EscalationLogSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+
+class CommunityBroadcastAPIView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request, pk):
+        try:
+            incident = SOSIncident.objects.select_related('resident').get(pk=pk)
+        except SOSIncident.DoesNotExist:
+            return Response({"detail": "Incident not found."}, status=status.HTTP_404_NOT_FOUND)
+
+        if incident.latitude is None or incident.longitude is None:
+            return Response({"detail": "Incident does not have valid coordinates to perform broadcast."}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Find online volunteers
+        from accounts.models import VolunteerProfile
+        volunteers = VolunteerProfile.objects.filter(is_online=True, latitude__isnull=False, longitude__isnull=False).select_related('user')
+        
+        notified_count = 0
+        from notifications.services import NotificationEngineService
+        for vol in volunteers:
+            dist = haversine(incident.latitude, incident.longitude, vol.latitude, vol.longitude)
+            if dist <= vol.visibility_radius:
+                NotificationEngineService.dispatch_notification(
+                    user=vol.user,
+                    title="🚨 Nearby SOS Community Broadcast",
+                    message=f"Urgent: {incident.resident.full_name} needs help nearby. Distance: {dist:.0f}m.",
+                    category="sos",
+                    incident=incident
+                )
+                notified_count += 1
+
+        return Response({
+            "message": "Broadcast sent successfully to nearby volunteers.",
+            "volunteers_notified": notified_count
+        }, status=status.HTTP_200_OK)
+
+
+class IncidentTrackingStatsAPIView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        from notifications.models import NotificationLog
+        
+        total_incidents = SOSIncident.objects.count()
+        pending = SOSIncident.objects.filter(status='Pending').count()
+        accepted = SOSIncident.objects.filter(status='Accepted').count()
+        resolved = SOSIncident.objects.filter(status='Resolved').count()
+        cancelled = SOSIncident.objects.filter(status='Cancelled').count()
+        
+        # Calculate delivery statistics
+        total_delivery = NotificationLog.objects.count()
+        successful_delivery = NotificationLog.objects.filter(status='SUCCESS').count()
+        failed_delivery = NotificationLog.objects.filter(status='FAILURE').count()
+        
+        # Average response time
+        accepted_incidents = SOSIncident.objects.filter(status__in=['Accepted', 'In Progress', 'Resolved'])
+        total_seconds = 0
+        count = 0
+        for inc in accepted_incidents:
+            diff = inc.updated_at - inc.created_at
+            total_seconds += diff.total_seconds()
+            count += 1
+            
+        avg_response_time = (total_seconds / count) if count > 0 else 0
+        
+        return Response({
+            "total_incidents": total_incidents,
+            "status_counts": {
+                "Pending": pending,
+                "Accepted": accepted,
+                "Resolved": resolved,
+                "Cancelled": cancelled
+            },
+            "delivery_stats": {
+                "total": total_delivery,
+                "success": successful_delivery,
+                "failure": failed_delivery,
+                "success_rate": (successful_delivery / total_delivery * 100) if total_delivery > 0 else 100
+            },
+            "average_response_time_seconds": avg_response_time,
+            "guardian_response_metrics": {
+                "total_escalated": EscalationLog.objects.filter(step='Secondary Guardian', status='TRIGGERED').count(),
+                "escalation_rate": (EscalationLog.objects.filter(step='Secondary Guardian', status='TRIGGERED').count() / total_incidents * 100) if total_incidents > 0 else 0
+            }
+        })

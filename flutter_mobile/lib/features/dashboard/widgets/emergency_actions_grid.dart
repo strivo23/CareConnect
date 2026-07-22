@@ -23,6 +23,7 @@ class EmergencyActionsGrid extends StatelessWidget {
       itemCount: actions.length,
       itemBuilder: (context, index) {
         final action = actions[index];
+        final isDark = Theme.of(context).brightness == Brightness.dark;
         return InkWell(
           borderRadius: BorderRadius.circular(18),
           onTap: () async {
@@ -33,9 +34,9 @@ class EmergencyActionsGrid extends StatelessWidget {
           child: Container(
             padding: const EdgeInsets.all(14),
             decoration: BoxDecoration(
-              color: Colors.white,
+              color: Theme.of(context).colorScheme.surface,
               borderRadius: BorderRadius.circular(18),
-              border: Border.all(color: AppTheme.primarySoft),
+              border: Border.all(color: isDark ? Colors.white10 : AppTheme.primarySoft),
             ),
             child: Row(
               children: [

@@ -7,9 +7,11 @@ import 'providers/auth_provider.dart';
 import 'providers/contacts_provider.dart';
 import 'providers/emergency_provider.dart';
 import 'providers/notifications_provider.dart';
+import 'core/services/push_notification_service.dart';
 
-void main() {
+void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  await PushNotificationService.instance.init();
   runApp(const CareConnectBootstrap());
 }
 

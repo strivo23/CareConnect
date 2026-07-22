@@ -4,6 +4,7 @@ class EmergencyContactModel {
     required this.residentId,
     required this.name,
     required this.phone,
+    this.email,
     required this.relationshipName,
     required this.isPrimary,
     required this.verified,
@@ -14,6 +15,7 @@ class EmergencyContactModel {
   final int residentId;
   final String name;
   final String phone;
+  final String? email;
   final String relationshipName;
   final bool isPrimary;
   final bool verified;
@@ -26,6 +28,7 @@ class EmergencyContactModel {
       residentId: (json['resident'] as num?)?.toInt() ?? 0,
       name: json['name']?.toString() ?? '',
       phone: json['phone']?.toString() ?? '',
+      email: json['email']?.toString(),
       relationshipName: json['relationship_name']?.toString() ?? '',
       isPrimary: json['is_primary'] as bool? ?? false,
       verified: json['verified'] as bool? ?? false,
@@ -37,11 +40,13 @@ class EmergencyContactModel {
         'resident': residentId,
         'name': name,
         'phone': phone,
+        'email': email,
         'relationship': null,
         'is_primary': isPrimary,
         'verified': verified,
       };
 }
+
 
 class RelationshipModel {
   RelationshipModel({required this.id, required this.name});

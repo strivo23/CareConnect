@@ -2,6 +2,7 @@ import 'package:go_router/go_router.dart';
 
 import '../features/authentication/login/login_screen.dart';
 import '../features/authentication/register/register_screen.dart';
+import '../features/authentication/otp_verify/otp_verify_screen.dart';
 import '../features/dashboard/dashboard_shell.dart';
 import '../features/profile/profile_screen.dart';
 import '../features/society/society_screen.dart';
@@ -14,13 +15,18 @@ import '../features/dashboard/sos_review_screen.dart';
 import '../features/dashboard/sos_success_screen.dart';
 
 class AppRouter {
+  static GoRouter? _router;
+
   static GoRouter router(AuthProvider authProvider) {
-    return GoRouter(
+    return _router ??= GoRouter(
       initialLocation: '/splash',
       refreshListenable: authProvider,
       redirect: (context, state) {
-        final isLoggingIn = state.matchedLocation == '/login' || state.matchedLocation == '/register';
+        final isLoggingIn = state.matchedLocation == '/login' ||
+            state.matchedLocation == '/register' ||
+            state.matchedLocation == '/otp-verify';
         final isSplash = state.matchedLocation == '/splash';
+
 
         if (!authProvider.isReady) {
           return isSplash ? null : '/splash';
@@ -54,9 +60,19 @@ class AppRouter {
           builder: (context, state) => const RegisterScreen(),
         ),
         GoRoute(
+          path: '/otp-verify',
+          builder: (context, state) {
+            final args = state.extra as Map<String, dynamic>;
+            return OTPVerificationScreen(
+              email: args['email'] as String,
+            );
+          },
+        ),
+        GoRoute(
           path: '/home',
           builder: (context, state) => const DashboardShell(),
         ),
+
         GoRoute(
           path: '/profile',
           builder: (context, state) => const ProfileScreen(),

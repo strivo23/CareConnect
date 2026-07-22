@@ -16,9 +16,10 @@ class SOSSuccessScreen extends StatelessWidget {
     final String status = incidentData['status']?.toString() ?? 'Pending';
     final String createdAtStr = incidentData['created_at']?.toString() ?? '';
     final DateTime createdAt = DateTime.tryParse(createdAtStr) ?? DateTime.now();
+    final isDark = Theme.of(context).brightness == Brightness.dark;
 
     return Scaffold(
-      backgroundColor: Colors.white,
+      backgroundColor: isDark ? const Color(0xFF111418) : Colors.white,
       body: SafeArea(
         child: Padding(
           padding: const EdgeInsets.all(24.0),
@@ -31,8 +32,8 @@ class SOSSuccessScreen extends StatelessWidget {
               Container(
                 width: 100,
                 height: 100,
-                decoration: const BoxDecoration(
-                  color: Color(0xFFDCFCE7),
+                decoration: BoxDecoration(
+                  color: isDark ? const Color(0xFF0F2E1E) : const Color(0xFFDCFCE7),
                   shape: BoxShape.circle,
                 ),
                 child: const Center(
@@ -50,7 +51,7 @@ class SOSSuccessScreen extends StatelessWidget {
                 style: GoogleFonts.outfit(
                   fontSize: 24,
                   fontWeight: FontWeight.w900,
-                  color: const Color(0xFF0F172A),
+                  color: Theme.of(context).colorScheme.onSurface,
                 ),
               ),
               const SizedBox(height: 10),
@@ -59,7 +60,7 @@ class SOSSuccessScreen extends StatelessWidget {
                 textAlign: TextAlign.center,
                 style: GoogleFonts.inter(
                   fontSize: 14,
-                  color: const Color(0xFF64748B),
+                  color: isDark ? Colors.white60 : const Color(0xFF64748B),
                   fontWeight: FontWeight.w600,
                   height: 1.4,
                 ),
@@ -71,24 +72,27 @@ class SOSSuccessScreen extends StatelessWidget {
                 width: double.infinity,
                 padding: const EdgeInsets.all(20),
                 decoration: BoxDecoration(
-                  color: const Color(0xFFF8FAFC),
+                  color: Theme.of(context).colorScheme.surface,
                   borderRadius: BorderRadius.circular(20),
-                  border: Border.all(color: const Color(0xFFE2E8F0)),
+                  border: Border.all(color: isDark ? Colors.white10 : const Color(0xFFE2E8F0)),
                 ),
                 child: Column(
                   children: [
                     _buildDetailRow(
+                      context: context,
                       label: 'Incident ID',
                       value: '#$incidentId',
                     ),
-                    const Divider(height: 20, color: Color(0xFFE2E8F0)),
+                    Divider(height: 20, color: isDark ? Colors.white10 : const Color(0xFFE2E8F0)),
                     _buildDetailRow(
+                      context: context,
                       label: 'Status',
                       value: status,
                       valueColor: status == 'Pending' ? Colors.orange : Colors.green,
                     ),
-                    const Divider(height: 20, color: Color(0xFFE2E8F0)),
+                    Divider(height: 20, color: isDark ? Colors.white10 : const Color(0xFFE2E8F0)),
                     _buildDetailRow(
+                      context: context,
                       label: 'Created Time',
                       value: DateFormat('dd MMM yyyy, hh:mm a').format(createdAt),
                     ),
@@ -168,10 +172,12 @@ class SOSSuccessScreen extends StatelessWidget {
   }
 
   Widget _buildDetailRow({
+    required BuildContext context,
     required String label,
     required String value,
     Color? valueColor,
   }) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
@@ -180,7 +186,7 @@ class SOSSuccessScreen extends StatelessWidget {
           style: GoogleFonts.inter(
             fontSize: 12,
             fontWeight: FontWeight.bold,
-            color: const Color(0xFF64748B),
+            color: isDark ? Colors.white60 : const Color(0xFF64748B),
           ),
         ),
         Text(
@@ -188,7 +194,7 @@ class SOSSuccessScreen extends StatelessWidget {
           style: GoogleFonts.inter(
             fontSize: 13.5,
             fontWeight: FontWeight.w800,
-            color: valueColor ?? const Color(0xFF1E293B),
+            color: valueColor ?? Theme.of(context).colorScheme.onSurface,
           ),
         ),
       ],

@@ -65,22 +65,36 @@ class NotificationsProvider extends ChangeNotifier {
       final list = await _repository.fetchGuardianNotifications();
       AppNotificationModel? newEmergency;
 
-    for (final notif in list) {
-      if (!_knownNotificationIds.contains(notif.id)) {
-        _knownNotificationIds.add(notif.id);
-        if (!notif.isRead && (notif.priority == 'HIGH' || notif.category.toLowerCase() == 'sos')) {
-          newEmergency = notif;
+      bool hasNew = false;
+      for (final notif in list) {
+        if (!_knownNotificationIds.contains(notif.id)) {
+          _knownNotificationIds.add(notif.id);
+          hasNew = true;
+          if (!notif.isRead && (notif.priority == 'HIGH' || notif.category.toLowerCase() == 'sos')) {
+            newEmergency = notif;
+          }
         }
       }
-    }
 
-    _guardianNotifications = list;
-    await _cacheGuardianNotifications(list);
-    notifyListeners();
+      bool isDifferent = hasNew || list.length != _guardianNotifications.length;
+      if (!isDifferent) {
+        for (int i = 0; i < list.length; i++) {
+          if (list[i].id != _guardianNotifications[i].id || list[i].isRead != _guardianNotifications[i].isRead) {
+            isDifferent = true;
+            break;
+          }
+        }
+      }
 
-    if (newEmergency != null && onNewEmergencyNotification != null) {
-      onNewEmergencyNotification!(newEmergency);
-    }
+      if (isDifferent) {
+        _guardianNotifications = list;
+        await _cacheGuardianNotifications(list);
+        notifyListeners();
+      }
+
+      if (newEmergency != null && onNewEmergencyNotification != null) {
+        onNewEmergencyNotification!(newEmergency);
+      }
     } catch (e) {
       debugPrint('Error polling guardian notifications: $e');
     }
@@ -190,6 +204,10 @@ class NotificationsProvider extends ChangeNotifier {
     _notifications = _notifications.where((item) => item.id != id).toList();
     _guardianNotifications = _guardianNotifications.where((item) => item.id != id).toList();
     notifyListeners();
+  }
+
+  Future<void> registerDeviceToken(String token) async {
+    await _repository.registerDeviceToken(token);
   }
 
   void _setLoading(bool value) {

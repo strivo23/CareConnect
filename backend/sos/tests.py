@@ -488,3 +488,86 @@ class SOSLocationAndMessagingTests(APITestCase):
         url = reverse("sos-message-create", kwargs={"pk": self.incident.pk})
         res = self.client.post(url, {"message": "fake text"}, format="json")
         self.assertEqual(res.status_code, 403)
+
+
+class Milestone2FeaturesTest(APITestCase):
+    def setUp(self):
+        self.admin = make_user("admin@cc.com", role="ADMIN", full_name="Admin User")
+        self.resident = make_user("resident@cc.com", role="RESIDENT", full_name="Resident User")
+        self.volunteer = make_user("volunteer@cc.com", role="VOLUNTEER", full_name="Volunteer User")
+        self.cat = make_category("Fire")
+
+        # Create volunteer profile with location
+        from accounts.models import VolunteerProfile
+        # Volunteer profile is automatically created in registration, but let's update or ensure it exists
+        self.vol_profile, _ = VolunteerProfile.objects.get_or_create(
+            user=self.volunteer,
+            defaults={
+                'skills': 'First Aid',
+                'availability': 'Online',
+                'service_area': 'Central Block',
+                'is_online': True,
+                'latitude': Decimal("12.9716"),
+                'longitude': Decimal("77.5946"),
+                'visibility_radius': 5000.0
+            }
+        )
+        self.vol_profile.is_online = True
+        self.vol_profile.latitude = Decimal("12.9716")
+        self.vol_profile.longitude = Decimal("77.5946")
+        self.vol_profile.visibility_radius = 5000.0
+        self.vol_profile.save()
+
+    def test_device_token_registration(self):
+        auth_client(self.client, self.resident)
+        url = reverse("device-list")
+        res = self.client.post(url, {"token": "fcm_test_device_token_123"}, format="json")
+        self.assertEqual(res.status_code, 201)
+        from notifications.models import FCMDevice
+        self.assertTrue(FCMDevice.objects.filter(user=self.resident, token="fcm_test_device_token_123").exists())
+
+    def test_escalation_workflow_scheduled_on_create(self):
+        auth_client(self.client, self.resident)
+        url = reverse("sos-send")
+        data = {
+            "category": self.cat.id,
+            "message": "Gas leak in kitchen!",
+            "latitude": "12.9716",
+            "longitude": "77.5946"
+        }
+        res = self.client.post(url, data, format="json")
+        self.assertEqual(res.status_code, 201)
+        incident_id = res.data["id"]
+
+        from sos.models import EscalationLog
+        logs = EscalationLog.objects.filter(incident_id=incident_id)
+        self.assertEqual(logs.count(), 4)
+        
+        # Primary Guardian should be triggered immediately
+        primary = logs.get(step="Primary Guardian")
+        self.assertEqual(primary.status, "TRIGGERED")
+
+        # Others should be pending
+        secondary = logs.get(step="Secondary Guardian")
+        self.assertEqual(secondary.status, "PENDING")
+
+    def test_community_broadcast_notifies_nearby_volunteers(self):
+        auth_client(self.client, self.resident)
+        # Create incident
+        incident = make_incident(self.resident, self.cat, latitude=Decimal("12.9716"), longitude=Decimal("77.5946"))
+        
+        auth_client(self.client, self.admin)
+        url = reverse("sos-incident-broadcast", kwargs={"pk": incident.pk})
+        res = self.client.post(url, format="json")
+        self.assertEqual(res.status_code, 200)
+        self.assertEqual(res.data["volunteers_notified"], 1)
+
+    def test_incident_tracking_stats(self):
+        auth_client(self.client, self.admin)
+        url = reverse("sos-incident-stats")
+        res = self.client.get(url)
+        self.assertEqual(res.status_code, 200)
+        self.assertIn("total_incidents", res.data)
+        self.assertIn("status_counts", res.data)
+        self.assertIn("delivery_stats", res.data)
+

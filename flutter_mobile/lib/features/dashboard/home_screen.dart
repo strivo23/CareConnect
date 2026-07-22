@@ -88,6 +88,7 @@ class HomeScreen extends StatelessWidget {
     final auth = context.watch<AuthProvider>();
     final appState = context.watch<AppStateProvider>();
     final emergency = context.watch<EmergencyProvider>();
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     final resident = appState.residentProfile;
 
     // Determine location string
@@ -126,7 +127,6 @@ class HomeScreen extends StatelessWidget {
               padding: const EdgeInsets.symmetric(horizontal: 20),
               child: Row(
                 children: [
-                  // Back arrow (clears state or goes back if possible)
                   InkWell(
                     onTap: () {
                       if (Navigator.of(context).canPop()) {
@@ -137,20 +137,20 @@ class HomeScreen extends StatelessWidget {
                     child: Container(
                       padding: const EdgeInsets.all(10),
                       decoration: BoxDecoration(
-                        color: Colors.white,
+                        color: Theme.of(context).colorScheme.surface,
                         shape: BoxShape.circle,
                         boxShadow: [
                           BoxShadow(
-                            color: const Color(0xFF0F172A).withValues(alpha: 0.04),
+                            color: isDark ? Colors.black26 : const Color(0xFF0F172A).withValues(alpha: 0.04),
                             blurRadius: 8,
                             offset: const Offset(0, 3),
                           ),
                         ],
                       ),
-                      child: const Icon(
+                      child: Icon(
                         Icons.arrow_back_ios_new_rounded,
                         size: 18,
-                        color: Color(0xFF1E293B),
+                        color: Theme.of(context).colorScheme.onSurface,
                       ),
                     ),
                   ),
@@ -160,7 +160,7 @@ class HomeScreen extends StatelessWidget {
                     style: GoogleFonts.outfit(
                       fontSize: 22,
                       fontWeight: FontWeight.w800,
-                      color: const Color(0xFF0F172A),
+                      color: Theme.of(context).colorScheme.onSurface,
                     ),
                   ),
                   const Spacer(),
@@ -171,9 +171,9 @@ class HomeScreen extends StatelessWidget {
                     child: Container(
                       padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 14),
                       decoration: BoxDecoration(
-                        color: Colors.white,
+                        color: Theme.of(context).colorScheme.surface,
                         borderRadius: BorderRadius.circular(16),
-                        border: Border.all(color: const Color(0xFFF1F5F9), width: 1.5),
+                        border: Border.all(color: isDark ? Colors.white10 : const Color(0xFFF1F5F9), width: 1.5),
                         boxShadow: [
                           BoxShadow(
                             color: const Color(0xFFEF4444).withValues(alpha: 0.04),
@@ -216,7 +216,7 @@ class HomeScreen extends StatelessWidget {
                       text: TextSpan(
                         text: 'Hi $userName! For any life-threatening emergency, ',
                         style: GoogleFonts.inter(
-                          color: const Color(0xFF475569),
+                          color: isDark ? Colors.white70 : const Color(0xFF475569),
                           fontSize: 13,
                           fontWeight: FontWeight.w500,
                         ),
@@ -341,9 +341,9 @@ class HomeScreen extends StatelessWidget {
               child: Container(
                 padding: const EdgeInsets.all(16),
                 decoration: BoxDecoration(
-                  color: const Color(0xFFFFF1F2), // Soft pink matching mockup
+                  color: isDark ? const Color(0xFF2D1418) : const Color(0xFFFFF1F2),
                   borderRadius: BorderRadius.circular(20),
-                  border: Border.all(color: const Color(0xFFFFE4E6), width: 1.5),
+                  border: Border.all(color: isDark ? const Color(0xFF4C1D24) : const Color(0xFFFFE4E6), width: 1.5),
                 ),
                 child: Row(
                   children: [
@@ -365,7 +365,7 @@ class HomeScreen extends StatelessWidget {
                             style: GoogleFonts.inter(
                               fontSize: 13,
                               fontWeight: FontWeight.w800,
-                              color: const Color(0xFF0F172A),
+                              color: isDark ? Colors.white : const Color(0xFF0F172A),
                             ),
                           ),
                           const SizedBox(height: 4),
@@ -373,7 +373,7 @@ class HomeScreen extends StatelessWidget {
                             'Your alert will be sent to security, admin and emergency contacts immediately.',
                             style: GoogleFonts.inter(
                               fontSize: 11.5,
-                              color: const Color(0xFF64748B),
+                              color: isDark ? Colors.white70 : const Color(0xFF64748B),
                               fontWeight: FontWeight.w600,
                               height: 1.35,
                             ),
@@ -403,7 +403,7 @@ class HomeScreen extends StatelessWidget {
                         style: GoogleFonts.outfit(
                           fontSize: 16,
                           fontWeight: FontWeight.w800,
-                          color: const Color(0xFF0F172A),
+                          color: Theme.of(context).colorScheme.onSurface,
                         ),
                       ),
                       const Spacer(),
@@ -414,9 +414,9 @@ class HomeScreen extends StatelessWidget {
                         child: Container(
                           padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 12),
                           decoration: BoxDecoration(
-                            color: Colors.white,
+                            color: Theme.of(context).colorScheme.surface,
                             borderRadius: BorderRadius.circular(12),
-                            border: Border.all(color: const Color(0xFFE2E8F0), width: 1.5),
+                            border: Border.all(color: isDark ? Colors.white10 : const Color(0xFFE2E8F0), width: 1.5),
                           ),
                           child: Row(
                             children: [
@@ -425,7 +425,7 @@ class HomeScreen extends StatelessWidget {
                               Text(
                                 'Refresh',
                                 style: GoogleFonts.inter(
-                                  color: const Color(0xFF64748B),
+                                  color: isDark ? Colors.white70 : const Color(0xFF64748B),
                                   fontWeight: FontWeight.w700,
                                   fontSize: 12,
                                 ),
@@ -440,9 +440,9 @@ class HomeScreen extends StatelessWidget {
                   Container(
                     padding: const EdgeInsets.all(16),
                     decoration: BoxDecoration(
-                      color: const Color(0xFFFFF8F8),
+                      color: isDark ? const Color(0xFF221112) : const Color(0xFFFFF8F8),
                       borderRadius: BorderRadius.circular(20),
-                      border: Border.all(color: const Color(0xFFFEE2E2), width: 1.5),
+                      border: Border.all(color: isDark ? const Color(0xFF4A1D20) : const Color(0xFFFEE2E2), width: 1.5),
                     ),
                     child: Row(
                       crossAxisAlignment: CrossAxisAlignment.start,
@@ -451,7 +451,7 @@ class HomeScreen extends StatelessWidget {
                         Container(
                           padding: const EdgeInsets.all(12),
                           decoration: BoxDecoration(
-                            color: const Color(0xFFFEE2E2),
+                            color: isDark ? const Color(0xFF3B1D20) : const Color(0xFFFEE2E2),
                             borderRadius: BorderRadius.circular(14),
                           ),
                           child: const Icon(Icons.location_on_rounded, color: Color(0xFFEF4444), size: 22),
@@ -466,7 +466,7 @@ class HomeScreen extends StatelessWidget {
                                 style: GoogleFonts.inter(
                                   fontSize: 13,
                                   fontWeight: FontWeight.w700,
-                                  color: const Color(0xFF1E293B),
+                                  color: Theme.of(context).colorScheme.onSurface,
                                   height: 1.4,
                                 ),
                               ),
@@ -476,7 +476,7 @@ class HomeScreen extends StatelessWidget {
                                 style: GoogleFonts.inter(
                                   fontSize: 11,
                                   fontWeight: FontWeight.w600,
-                                  color: const Color(0xFF94A3B8),
+                                  color: isDark ? Colors.white38 : const Color(0xFF94A3B8),
                                 ),
                               ),
                             ],
@@ -502,7 +502,7 @@ class HomeScreen extends StatelessWidget {
                         style: GoogleFonts.outfit(
                           fontSize: 16,
                           fontWeight: FontWeight.w800,
-                          color: const Color(0xFF0F172A),
+                          color: Theme.of(context).colorScheme.onSurface,
                         ),
                       ),
                       const Spacer(),
@@ -525,7 +525,7 @@ class HomeScreen extends StatelessWidget {
                       itemCount: emergency.quickActions.length,
                       itemBuilder: (context, index) {
                         final action = emergency.quickActions[index];
-                        final details = _resolveActionStyle(action.slug);
+                        final details = _resolveActionStyle(action.slug, isDark);
                         return Padding(
                           padding: const EdgeInsets.only(right: 12),
                           child: InkWell(
@@ -580,49 +580,49 @@ class HomeScreen extends StatelessWidget {
     );
   }
 
-  _ActionStyle _resolveActionStyle(String slug) {
+  _ActionStyle _resolveActionStyle(String slug, bool isDark) {
     switch (slug) {
       case 'ambulance':
         return _ActionStyle(
           icon: Icons.local_hospital_rounded,
-          accentColor: const Color(0xFFEF4444),
-          backgroundColor: const Color(0xFFFFF1F2),
+          accentColor: isDark ? const Color(0xFFFCA5A5) : const Color(0xFFEF4444),
+          backgroundColor: isDark ? const Color(0xFF451A1D) : const Color(0xFFFFF1F2),
         );
       case 'fire':
         return _ActionStyle(
           icon: Icons.local_fire_department_rounded,
-          accentColor: const Color(0xFFF97316),
-          backgroundColor: const Color(0xFFFFF7ED),
+          accentColor: isDark ? const Color(0xFFFED7AA) : const Color(0xFFF97316),
+          backgroundColor: isDark ? const Color(0xFF4A200B) : const Color(0xFFFFF7ED),
         );
       case 'police':
         return _ActionStyle(
           icon: Icons.local_police_rounded,
-          accentColor: const Color(0xFF3B82F6),
-          backgroundColor: const Color(0xFFEFF6FF),
+          accentColor: isDark ? const Color(0xFF93C5FD) : const Color(0xFF3B82F6),
+          backgroundColor: isDark ? const Color(0xFF172554) : const Color(0xFFEFF6FF),
         );
       case 'electrical':
         return _ActionStyle(
           icon: Icons.flash_on_rounded,
-          accentColor: const Color(0xFFEAB308),
-          backgroundColor: const Color(0xFFFEFCE8),
+          accentColor: isDark ? const Color(0xFFFDE047) : const Color(0xFFEAB308),
+          backgroundColor: isDark ? const Color(0xFF423B06) : const Color(0xFFFEFCE8),
         );
       case 'security':
         return _ActionStyle(
           icon: Icons.shield_rounded,
-          accentColor: const Color(0xFF10B981),
-          backgroundColor: const Color(0xFFECFDF5),
+          accentColor: isDark ? const Color(0xFF6EE7B7) : const Color(0xFF10B981),
+          backgroundColor: isDark ? const Color(0xFF022C22) : const Color(0xFFECFDF5),
         );
       case 'hospital':
         return _ActionStyle(
           icon: Icons.medical_services_rounded,
-          accentColor: const Color(0xFF8B5CF6),
-          backgroundColor: const Color(0xFFF5F3FF),
+          accentColor: isDark ? const Color(0xFFC4B5FD) : const Color(0xFF8B5CF6),
+          backgroundColor: isDark ? const Color(0xFF2E1065) : const Color(0xFFF5F3FF),
         );
       default:
         return _ActionStyle(
           icon: Icons.warning_rounded,
-          accentColor: const Color(0xFF64748B),
-          backgroundColor: const Color(0xFFF8FAFC),
+          accentColor: isDark ? const Color(0xFFCBD5E1) : const Color(0xFF64748B),
+          backgroundColor: isDark ? const Color(0xFF1E293B) : const Color(0xFFF8FAFC),
         );
     }
   }

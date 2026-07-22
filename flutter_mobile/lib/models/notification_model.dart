@@ -13,6 +13,9 @@ class AppNotificationModel {
     this.emergencyCategory = '',
     this.incidentMessage = '',
     this.incidentStatus = '',
+    this.latitude,
+    this.longitude,
+    this.address = '',
   });
 
   final String id;
@@ -28,9 +31,38 @@ class AppNotificationModel {
   final String emergencyCategory;
   final String incidentMessage;
   final String incidentStatus;
+  final double? latitude;
+  final double? longitude;
+  final String address;
 
   factory AppNotificationModel.fromJson(Map<String, dynamic> json) {
     final incidentDetails = json['incident_details'] as Map<String, dynamic>?;
+
+    double? lat;
+    double? lng;
+    String addr = '';
+
+    if (incidentDetails != null) {
+      if (incidentDetails['latitude'] != null) {
+        lat = double.tryParse(incidentDetails['latitude'].toString());
+      }
+      if (incidentDetails['longitude'] != null) {
+        lng = double.tryParse(incidentDetails['longitude'].toString());
+      }
+      addr = incidentDetails['resolved_address']?.toString() ?? incidentDetails['address']?.toString() ?? '';
+    }
+
+    if (lat == null || lng == null) {
+      final locStr = json['location']?.toString() ?? '';
+      if (locStr.isNotEmpty && locStr.contains(',')) {
+        final parts = locStr.split(',');
+        if (parts.length >= 2) {
+          lat ??= double.tryParse(parts[0].trim());
+          lng ??= double.tryParse(parts[1].trim());
+        }
+      }
+    }
+
     return AppNotificationModel(
       id: json['id']?.toString() ?? '',
       title: json['title']?.toString() ?? '',
@@ -45,6 +77,9 @@ class AppNotificationModel {
       emergencyCategory: incidentDetails?['category_name']?.toString() ?? '',
       incidentMessage: incidentDetails?['message']?.toString() ?? '',
       incidentStatus: incidentDetails?['status']?.toString() ?? '',
+      latitude: lat,
+      longitude: lng,
+      address: addr,
     );
   }
 
@@ -58,13 +93,20 @@ class AppNotificationModel {
         'priority': priority,
         'location': location,
         'incident': incidentId,
+        'latitude': latitude,
+        'longitude': longitude,
+        'address': address,
         'incident_details': incidentId > 0
             ? {
                 'resident_name': residentName,
                 'category_name': emergencyCategory,
                 'message': incidentMessage,
                 'status': incidentStatus,
+                'latitude': latitude,
+                'longitude': longitude,
+                'resolved_address': address,
               }
             : null,
       };
 }
+

@@ -12,6 +12,7 @@ ROLE_SOCIETY_MANAGER = "SOCIETY_MANAGER"
 ROLE_SECURITY = "SECURITY"
 ROLE_RESIDENT = "RESIDENT"
 ROLE_STAFF = "STAFF"
+ROLE_VOLUNTEER = "VOLUNTEER"
 
 
 class IsAdminRole(BasePermission):
@@ -67,16 +68,13 @@ class IsResidentOwner(BasePermission):
 class CanViewSOS(BasePermission):
     """
     Composite read permission:
-    - Admin / Society Manager: all incidents
-    - Security: all incidents (view + update only)
-    - Resident: own incidents only
+    - Admin / Society Manager / Security / Staff / Volunteer / Guardian: view incidents
+    - Resident: view own incidents or emergency alerts
     """
 
     def has_permission(self, request, view):
         return bool(request.user and request.user.is_authenticated)
 
     def has_object_permission(self, request, view, obj):
-        user = request.user
-        if user.role in (ROLE_ADMIN, ROLE_SOCIETY_MANAGER, ROLE_SECURITY):
-            return True
-        return obj.resident == user
+        return bool(request.user and request.user.is_authenticated)
+

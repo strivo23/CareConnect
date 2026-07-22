@@ -15,26 +15,25 @@ class RegisterAPIView(APIView):
         if serializer.is_valid():
             user = serializer.save()
             
-            society_id = request.data.get('society')
-            block_id = request.data.get('block')
-            flat_id = request.data.get('flat')
+            # Generate registration OTP
+            import random
+            from django.utils import timezone
+            from .models import OTPVerification
+            otp = str(random.randint(100000, 999999))
+            expires_at = timezone.now() + timezone.timedelta(minutes=10)
+            OTPVerification.objects.create(
+                user=user,
+                otp=otp,
+                expires_at=expires_at
+            )
+            print(f"[MOCK OTP] Sent registration OTP {otp} to {user.email}", flush=True)
+
             
-            if society_id or block_id or flat_id:
-                from society.models import Society, BlockTower, Flat
-                society = Society.objects.filter(id=society_id).first() if society_id else None
-                block = BlockTower.objects.filter(id=block_id).first() if block_id else None
-                flat = Flat.objects.filter(id=flat_id).first() if flat_id else None
-                
-                ResidentProfile.objects.create(
-                    user=user,
-                    society=society,
-                    block=block,
-                    flat=flat,
-                    status='Pending'
-                )
-                
-            return Response(serializer.data, status=status.HTTP_201_CREATED)
+            res_data = serializer.data
+            res_data["otp"] = otp  # Include OTP in response for testing/development flow convenience
+            return Response(res_data, status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
 
 class LoginAPIView(APIView):
     def post(self, request):
@@ -120,12 +119,120 @@ class MeAPIView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def get(self, request):
-        return Response(UserSerializer(request.user).data)
+        user = request.user
+        data = UserSerializer(user).data
+        if user.role == 'VOLUNTEER':
+            from .models import VolunteerProfile
+            from .serializers import VolunteerProfileSerializer
+            profile, _ = VolunteerProfile.objects.get_or_create(user=user)
+            data['volunteer_profile'] = VolunteerProfileSerializer(profile).data
+        return Response(data)
 
     def patch(self, request):
         user = request.user
         serializer = UserSerializer(user, data=request.data, partial=True)
         if serializer.is_valid():
             serializer.save()
-            return Response(serializer.data)
+            
+            data = serializer.data
+            if user.role == 'VOLUNTEER':
+                from .models import VolunteerProfile
+                from .serializers import VolunteerProfileSerializer
+                profile, _ = VolunteerProfile.objects.get_or_create(user=user)
+                prof_serializer = VolunteerProfileSerializer(profile, data=request.data, partial=True)
+                if prof_serializer.is_valid():
+                    prof_serializer.save()
+                    data['volunteer_profile'] = prof_serializer.data
+            return Response(data)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+
+class SendOTPAPIView(APIView):
+    def post(self, request):
+        email = request.data.get('email')
+        if not email:
+            return Response({"email": "Email is required."}, status=status.HTTP_400_BAD_REQUEST)
+        
+        from accounts.models import User
+        user = User.objects.filter(email=email).first()
+        if not user:
+            return Response({"detail": "User not found."}, status=status.HTTP_444_NOT_FOUND)
+        
+        import random
+        from django.utils import timezone
+        from .models import OTPVerification
+        
+        otp = str(random.randint(100000, 999999))
+        expires_at = timezone.now() + timezone.timedelta(minutes=10)
+        OTPVerification.objects.create(
+            user=user,
+            otp=otp,
+            expires_at=expires_at
+        )
+        
+        print(f"[MOCK OTP] Sent OTP {otp} to {email}", flush=True)
+        return Response({"message": "OTP sent successfully.", "otp": otp}, status=status.HTTP_200_OK)
+
+
+class VerifyOTPAPIView(APIView):
+    def post(self, request):
+        email = request.data.get('email')
+        otp = request.data.get('otp')
+        if not email or not otp:
+            return Response({"detail": "Email and OTP are required."}, status=status.HTTP_400_BAD_REQUEST)
+        
+        from accounts.models import User
+        user = User.objects.filter(email=email).first()
+        if not user:
+            return Response({"detail": "User not found."}, status=status.HTTP_444_NOT_FOUND)
+        
+        from django.utils import timezone
+        from .models import OTPVerification
+        
+        otp_record = OTPVerification.objects.filter(
+            user=user, 
+            is_verified=False,
+            otp=otp
+        ).order_by('-created_at').first()
+        
+        if not otp_record:
+            return Response({"detail": "Invalid OTP."}, status=status.HTTP_400_BAD_REQUEST)
+        
+        if timezone.now() > otp_record.expires_at:
+            return Response({"detail": "OTP has expired."}, status=status.HTTP_400_BAD_REQUEST)
+        
+        otp_record.is_verified = True
+        otp_record.save()
+        
+        user.is_verified = True
+        user.save()
+        
+        return Response({"message": "Verification successful.", "is_verified": True}, status=status.HTTP_200_OK)
+
+
+class ResendOTPAPIView(APIView):
+    def post(self, request):
+        email = request.data.get('email')
+        if not email:
+            return Response({"email": "Email is required."}, status=status.HTTP_400_BAD_REQUEST)
+        
+        from accounts.models import User
+        user = User.objects.filter(email=email).first()
+        if not user:
+            return Response({"detail": "User not found."}, status=status.HTTP_444_NOT_FOUND)
+        
+        import random
+        from django.utils import timezone
+        from .models import OTPVerification
+        
+        otp = str(random.randint(100000, 999999))
+        expires_at = timezone.now() + timezone.timedelta(minutes=10)
+        OTPVerification.objects.create(
+            user=user,
+            otp=otp,
+            expires_at=expires_at
+        )
+        
+        print(f"[MOCK OTP] Resent OTP {otp} to {email}", flush=True)
+        return Response({"message": "OTP resent successfully.", "otp": otp}, status=status.HTTP_200_OK)

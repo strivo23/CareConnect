@@ -16,7 +16,9 @@ class CareConnectApp extends StatelessWidget {
     return MaterialApp.router(
       title: 'CareConnect',
       debugShowCheckedModeBanner: false,
-      theme: AppTheme.lightTheme(authProvider.useDarkTheme),
+      theme: AppTheme.lightTheme(false),
+      darkTheme: AppTheme.lightTheme(true),
+      themeMode: authProvider.themeMode,
       routerConfig: AppRouter.router(authProvider),
       builder: (context, child) {
         final base = child ?? const SizedBox.shrink();

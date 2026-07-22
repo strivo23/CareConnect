@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:go_router/go_router.dart';
+import 'package:dio/dio.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/services/api_client.dart';
 
@@ -19,17 +20,51 @@ class _SOSReviewScreenState extends State<SOSReviewScreen> {
   Future<void> _submitSOS() async {
     setState(() => _isSending = true);
     try {
-      final category = widget.data['category'] as Map<String, dynamic>;
+      final categoryRaw = widget.data['category'];
+      int? categoryId;
+      if (categoryRaw is Map) {
+        final idVal = categoryRaw['id'];
+        if (idVal is int) {
+          categoryId = idVal;
+        } else if (idVal != null) {
+          categoryId = int.tryParse(idVal.toString());
+        }
+      } else if (categoryRaw is int) {
+        categoryId = categoryRaw;
+      } else if (categoryRaw != null) {
+        categoryId = int.tryParse(categoryRaw.toString());
+      }
+
+      final latRaw = widget.data['latitude'];
+      final lngRaw = widget.data['longitude'];
+      double? latVal;
+      double? lngVal;
+      if (latRaw != null) {
+        final parsed = latRaw is double ? latRaw : double.tryParse(latRaw.toString());
+        if (parsed != null) latVal = double.parse(parsed.toStringAsFixed(6));
+      }
+      if (lngRaw != null) {
+        final parsed = lngRaw is double ? lngRaw : double.tryParse(lngRaw.toString());
+        if (parsed != null) lngVal = double.parse(parsed.toStringAsFixed(6));
+      }
+
+      final body = <String, dynamic>{
+        'message': widget.data['message'],
+        'latitude': latVal,
+        'longitude': lngVal,
+        'address': widget.data['address'],
+        'priority': widget.data['priority'] ?? 'HIGH',
+      };
+      if (categoryId != null) {
+        body['category'] = categoryId;
+      }
+
+
+      debugPrint('[SOS DISPATCH REQUEST] URL: /api/sos/send/ Data: $body');
+
       final response = await ApiClient.instance.post(
         '/api/sos/send/',
-        data: {
-          'category': category['id'],
-          'message': widget.data['message'],
-          'latitude': widget.data['latitude'],
-          'longitude': widget.data['longitude'],
-          'address': widget.data['address'],
-          'priority': widget.data['priority'],
-        },
+        data: body,
       );
 
       if (response.statusCode == 201) {
@@ -48,11 +83,34 @@ class _SOSReviewScreenState extends State<SOSReviewScreen> {
         throw Exception('Failed to send SOS: ${response.statusMessage}');
       }
     } catch (e) {
+      String userErrorMsg = 'Failed to dispatch SOS emergency alert.';
+      if (e is DioException) {
+        final resData = e.response?.data;
+        if (resData is Map) {
+          final errList = <String>[];
+          resData.forEach((key, val) {
+            if (val is List) {
+              errList.add('$key: ${val.join(", ")}');
+            } else {
+              errList.add('$key: $val');
+            }
+          });
+          if (errList.isNotEmpty) {
+            userErrorMsg = errList.join(' | ');
+          }
+        } else if (resData != null) {
+          userErrorMsg = resData.toString();
+        }
+      } else {
+        userErrorMsg = e.toString();
+      }
+
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Error dispatching SOS: ${e.toString()}'),
+            content: Text(userErrorMsg),
             backgroundColor: AppTheme.danger,
+            behavior: SnackBarBehavior.floating,
           ),
         );
       }
@@ -63,6 +121,8 @@ class _SOSReviewScreenState extends State<SOSReviewScreen> {
     }
   }
 
+
+
   @override
   Widget build(BuildContext context) {
     final category = widget.data['category'] as Map<String, dynamic>;
@@ -71,20 +131,21 @@ class _SOSReviewScreenState extends State<SOSReviewScreen> {
     final latitude = widget.data['latitude'] as double;
     final longitude = widget.data['longitude'] as double;
     final address = widget.data['address']?.toString() ?? '';
+    final isDark = Theme.of(context).brightness == Brightness.dark;
 
     return Scaffold(
-      backgroundColor: const Color(0xFFF8FAFC),
+      backgroundColor: isDark ? const Color(0xFF111418) : const Color(0xFFF8FAFC),
       appBar: AppBar(
-        backgroundColor: Colors.white,
+        backgroundColor: Theme.of(context).colorScheme.surface,
         elevation: 0,
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios_new_rounded, color: Color(0xFF1E293B)),
+          icon: Icon(Icons.arrow_back_ios_new_rounded, color: Theme.of(context).colorScheme.onSurface),
           onPressed: () => context.pop(),
         ),
         title: Text(
           'Review SOS Dispatch',
           style: GoogleFonts.outfit(
-            color: const Color(0xFF1E293B),
+            color: Theme.of(context).colorScheme.onSurface,
             fontWeight: FontWeight.w800,
             fontSize: 20,
           ),
@@ -99,9 +160,9 @@ class _SOSReviewScreenState extends State<SOSReviewScreen> {
             Container(
               padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
-                color: const Color(0xFFFFF1F2),
+                color: isDark ? const Color(0xFF2D1418) : const Color(0xFFFFF1F2),
                 borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: const Color(0xFFFFE4E6)),
+                border: Border.all(color: isDark ? const Color(0xFF4C1D24) : const Color(0xFFFFE4E6)),
               ),
               child: Row(
                 children: [
@@ -112,7 +173,7 @@ class _SOSReviewScreenState extends State<SOSReviewScreen> {
                       'Please confirm the details below. Dispatch notifications will be sent to security and primary guardians instantly.',
                       style: GoogleFonts.inter(
                         fontSize: 12.5,
-                        color: const Color(0xFF9F1239),
+                        color: isDark ? const Color(0xFFFCA5A5) : const Color(0xFF9F1239),
                         fontWeight: FontWeight.bold,
                         height: 1.4,
                       ),
@@ -129,7 +190,7 @@ class _SOSReviewScreenState extends State<SOSReviewScreen> {
               style: GoogleFonts.outfit(
                 fontSize: 16,
                 fontWeight: FontWeight.w800,
-                color: const Color(0xFF0F172A),
+                color: Theme.of(context).colorScheme.onSurface,
               ),
             ),
             const SizedBox(height: 12),
@@ -137,9 +198,9 @@ class _SOSReviewScreenState extends State<SOSReviewScreen> {
               width: double.infinity,
               padding: const EdgeInsets.all(20),
               decoration: BoxDecoration(
-                color: Colors.white,
+                color: Theme.of(context).colorScheme.surface,
                 borderRadius: BorderRadius.circular(24),
-                border: Border.all(color: const Color(0xFFE2E8F0)),
+                border: Border.all(color: isDark ? Colors.white10 : const Color(0xFFE2E8F0)),
                 boxShadow: [
                   BoxShadow(
                     color: Colors.black.withValues(alpha: 0.02),
@@ -154,7 +215,7 @@ class _SOSReviewScreenState extends State<SOSReviewScreen> {
                     label: 'Category',
                     value: '${category['icon'] ?? "🚨"} ${category['name'] ?? "General"}',
                   ),
-                  const Divider(height: 24, color: Color(0xFFF1F5F9)),
+                  Divider(height: 24, color: isDark ? Colors.white10 : const Color(0xFFF1F5F9)),
                   _buildReviewRow(
                     label: 'Priority',
                     value: priority,
@@ -166,17 +227,17 @@ class _SOSReviewScreenState extends State<SOSReviewScreen> {
                                 ? Colors.orange
                                 : Colors.blue,
                   ),
-                  const Divider(height: 24, color: Color(0xFFF1F5F9)),
+                  Divider(height: 24, color: isDark ? Colors.white10 : const Color(0xFFF1F5F9)),
                   _buildReviewRow(
                     label: 'Emergency Message',
                     value: message.isNotEmpty ? message : 'Immediate assistance requested.',
                   ),
-                  const Divider(height: 24, color: Color(0xFFF1F5F9)),
+                  Divider(height: 24, color: isDark ? Colors.white10 : const Color(0xFFF1F5F9)),
                   _buildReviewRow(
                     label: 'Coordinates',
                     value: 'Lat: ${latitude.toStringAsFixed(6)}, Lng: ${longitude.toStringAsFixed(6)}',
                   ),
-                  const Divider(height: 24, color: Color(0xFFF1F5F9)),
+                  Divider(height: 24, color: isDark ? Colors.white10 : const Color(0xFFF1F5F9)),
                   _buildReviewRow(
                     label: 'Resolved Address',
                     value: address,
@@ -224,6 +285,7 @@ class _SOSReviewScreenState extends State<SOSReviewScreen> {
     required String value,
     Color? valueColor,
   }) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -232,7 +294,7 @@ class _SOSReviewScreenState extends State<SOSReviewScreen> {
           style: GoogleFonts.inter(
             fontSize: 11,
             fontWeight: FontWeight.bold,
-            color: const Color(0xFF64748B),
+            color: isDark ? Colors.white60 : const Color(0xFF64748B),
           ),
         ),
         const SizedBox(height: 6),
@@ -241,7 +303,7 @@ class _SOSReviewScreenState extends State<SOSReviewScreen> {
           style: GoogleFonts.inter(
             fontSize: 14,
             fontWeight: FontWeight.bold,
-            color: valueColor ?? const Color(0xFF1E293B),
+            color: valueColor ?? Theme.of(context).colorScheme.onSurface,
             height: 1.4,
           ),
         ),

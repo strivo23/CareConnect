@@ -7,18 +7,19 @@ class OfflineBanner extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       decoration: BoxDecoration(
-        color: Colors.orange.shade100,
+        color: isDark ? const Color(0xFF3B250F) : Colors.orange.shade100,
         borderRadius: BorderRadius.circular(18),
       ),
       child: Row(
         children: [
-          Icon(Icons.wifi_off_rounded, color: Colors.orange.shade800),
+          Icon(Icons.wifi_off_rounded, color: isDark ? const Color(0xFFFBBF24) : Colors.orange.shade800),
           const SizedBox(width: 12),
-          Expanded(child: Text(message, style: TextStyle(color: Colors.orange.shade900, fontWeight: FontWeight.w600))),
+          Expanded(child: Text(message, style: TextStyle(color: isDark ? const Color(0xFFFBBF24) : Colors.orange.shade900, fontWeight: FontWeight.w600))),
         ],
       ),
     );

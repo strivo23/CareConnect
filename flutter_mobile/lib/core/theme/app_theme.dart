@@ -12,8 +12,8 @@ class AppTheme {
   static ThemeData lightTheme(bool darkModeEnabled) {
     final scheme = ColorScheme.fromSeed(
       seedColor: primary,
-      brightness: Brightness.light,
-      surface: Colors.white,
+      brightness: darkModeEnabled ? Brightness.dark : Brightness.light,
+      surface: darkModeEnabled ? const Color(0xFF1E242C) : Colors.white,
     );
 
     final base = ThemeData.from(
@@ -22,25 +22,25 @@ class AppTheme {
     );
 
     return base.copyWith(
-      scaffoldBackgroundColor: scheme.surface,
+      scaffoldBackgroundColor: darkModeEnabled ? const Color(0xFF111418) : scheme.surface,
       textTheme: GoogleFonts.interTextTheme(base.textTheme),
       appBarTheme: AppBarTheme(
-        backgroundColor: scheme.surface,
+        backgroundColor: darkModeEnabled ? const Color(0xFF1E242C) : scheme.surface,
         foregroundColor: scheme.onSurface,
         centerTitle: false,
       ),
       cardTheme: CardThemeData(
         elevation: 0,
-        color: scheme.surface,
+        color: darkModeEnabled ? const Color(0xFF1E242C) : scheme.surface,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
       ),
       navigationBarTheme: NavigationBarThemeData(
-        backgroundColor: scheme.surface,
+        backgroundColor: darkModeEnabled ? const Color(0xFF1E242C) : scheme.surface,
         indicatorColor: primary.withValues(alpha: 0.16),
       ),
       inputDecorationTheme: InputDecorationTheme(
         filled: true,
-        fillColor: scheme.surface,
+        fillColor: darkModeEnabled ? const Color(0xFF282E38) : scheme.surface,
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(18),
           borderSide: BorderSide.none,

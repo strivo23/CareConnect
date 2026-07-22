@@ -41,18 +41,19 @@ class SOSIncident(models.Model):
     message = models.TextField(blank=True)
 
     latitude = models.DecimalField(
-        max_digits=10,
-        decimal_places=7,
+        max_digits=15,
+        decimal_places=10,
         null=True,
         blank=True
     )
 
     longitude = models.DecimalField(
-        max_digits=10,
-        decimal_places=7,
+        max_digits=15,
+        decimal_places=10,
         null=True,
         blank=True
     )
+
 
     status = models.CharField(
         max_length=20,
@@ -111,3 +112,30 @@ class SOSEmergencyMessage(models.Model):
         verbose_name = "SOS Emergency Message"
         verbose_name_plural = "SOS Emergency Messages"
         ordering = ["created_at"]
+
+
+class EscalationConfig(models.Model):
+    response_time_window = models.IntegerField(default=30)  # response time window in seconds
+    is_active = models.BooleanField(default=True)
+
+    def __str__(self):
+        return f"Escalation Config: {self.response_time_window}s window"
+
+
+class EscalationLog(models.Model):
+    incident = models.ForeignKey(
+        SOSIncident,
+        on_delete=models.CASCADE,
+        related_name="escalations"
+    )
+    step = models.CharField(max_length=50)  # 'Primary Guardian', 'Secondary Guardian', 'Emergency Contacts', 'Security/Admin'
+    status = models.CharField(max_length=20, default='PENDING')  # 'PENDING', 'TRIGGERED', 'CANCELLED'
+    scheduled_at = models.DateTimeField()
+    triggered_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"Incident #{self.incident.id} - {self.step} ({self.status})"
+
+    class Meta:
+        ordering = ["scheduled_at"]

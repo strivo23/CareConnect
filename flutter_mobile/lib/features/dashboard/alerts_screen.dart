@@ -181,11 +181,12 @@ class _AlertsScreenState extends State<AlertsScreen> with SingleTickerProviderSt
   @override
   Widget build(BuildContext context) {
     final unreadCount = context.watch<NotificationsProvider>().unreadCount;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
 
     return Scaffold(
-      backgroundColor: Colors.grey.shade50,
+      backgroundColor: isDark ? const Color(0xFF111418) : Colors.grey.shade50,
       appBar: AppBar(
-        backgroundColor: Colors.white,
+        backgroundColor: Theme.of(context).colorScheme.surface,
         elevation: 0,
         title: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -193,7 +194,7 @@ class _AlertsScreenState extends State<AlertsScreen> with SingleTickerProviderSt
             Text(
               'Alerts',
               style: GoogleFonts.outfit(
-                color: Colors.black87,
+                color: Theme.of(context).colorScheme.onSurface,
                 fontSize: 22,
                 fontWeight: FontWeight.w900,
               ),
@@ -201,7 +202,7 @@ class _AlertsScreenState extends State<AlertsScreen> with SingleTickerProviderSt
             Text(
               'Emergency Dispatch Center',
               style: GoogleFonts.inter(
-                color: Colors.grey.shade600,
+                color: isDark ? Colors.white60 : Colors.grey.shade600,
                 fontSize: 12,
                 fontWeight: FontWeight.w500,
               ),
@@ -216,7 +217,7 @@ class _AlertsScreenState extends State<AlertsScreen> with SingleTickerProviderSt
               alignment: Alignment.center,
               children: [
                 IconButton(
-                  icon: const Icon(Icons.notifications_outlined, color: Colors.black87, size: 26),
+                  icon: Icon(Icons.notifications_outlined, color: Theme.of(context).colorScheme.onSurface, size: 26),
                   onPressed: () {
                     // Navigate to notifications tab if dashboard shell index allows or show message
                     ScaffoldMessenger.of(context).showSnackBar(
@@ -330,11 +331,12 @@ class _AlertsScreenState extends State<AlertsScreen> with SingleTickerProviderSt
 
   // SOS Section Widget
   Widget _buildSOSSection() {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: Theme.of(context).colorScheme.surface,
         borderRadius: BorderRadius.circular(24),
         boxShadow: [
           BoxShadow(
@@ -343,7 +345,7 @@ class _AlertsScreenState extends State<AlertsScreen> with SingleTickerProviderSt
             offset: const Offset(0, 8),
           ),
         ],
-        border: Border.all(color: Colors.red.shade50),
+        border: Border.all(color: isDark ? Colors.white10 : Colors.red.shade50),
       ),
       child: Column(
         children: [
@@ -352,7 +354,7 @@ class _AlertsScreenState extends State<AlertsScreen> with SingleTickerProviderSt
             style: GoogleFonts.outfit(
               fontSize: 18,
               fontWeight: FontWeight.w800,
-              color: Colors.black87,
+              color: Theme.of(context).colorScheme.onSurface,
             ),
           ),
           const SizedBox(height: 20),
@@ -428,7 +430,7 @@ class _AlertsScreenState extends State<AlertsScreen> with SingleTickerProviderSt
             'In a life-threatening emergency, tap SOS.\nYour alert, live location and user information will be instantly shared with:',
             textAlign: TextAlign.center,
             style: GoogleFonts.inter(
-              color: Colors.grey.shade700,
+              color: isDark ? Colors.white70 : Colors.grey.shade700,
               fontSize: 13,
               height: 1.4,
             ),
@@ -464,10 +466,11 @@ class _AlertsScreenState extends State<AlertsScreen> with SingleTickerProviderSt
   }
 
   Widget _buildTargetBadge(String text) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       decoration: BoxDecoration(
-        color: Colors.red.shade50,
+        color: isDark ? const Color(0xFF3B1D20) : Colors.red.shade50,
         borderRadius: BorderRadius.circular(10),
       ),
       child: Text(
@@ -483,11 +486,12 @@ class _AlertsScreenState extends State<AlertsScreen> with SingleTickerProviderSt
 
   // Location Section Widget
   Widget _buildLocationSection() {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: Theme.of(context).colorScheme.surface,
         borderRadius: BorderRadius.circular(20),
         boxShadow: [
           BoxShadow(
@@ -496,7 +500,7 @@ class _AlertsScreenState extends State<AlertsScreen> with SingleTickerProviderSt
             offset: const Offset(0, 4),
           ),
         ],
-        border: Border.all(color: Colors.grey.shade100),
+        border: Border.all(color: isDark ? Colors.white10 : Colors.grey.shade100),
       ),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -504,7 +508,7 @@ class _AlertsScreenState extends State<AlertsScreen> with SingleTickerProviderSt
           Row(
             children: [
               CircleAvatar(
-                backgroundColor: Colors.blue.shade50,
+                backgroundColor: isDark ? const Color(0xFF1E293B) : Colors.blue.shade50,
                 radius: 22,
                 child: const Icon(Icons.my_location_rounded, color: Color(0xFF2563EB), size: 22),
               ),
@@ -517,14 +521,14 @@ class _AlertsScreenState extends State<AlertsScreen> with SingleTickerProviderSt
                     style: GoogleFonts.outfit(
                       fontSize: 15,
                       fontWeight: FontWeight.bold,
-                      color: Colors.black87,
+                      color: Theme.of(context).colorScheme.onSurface,
                     ),
                   ),
                   Text(
                     'Block A, Flat A-203',
                     style: GoogleFonts.inter(
                       fontSize: 12,
-                      color: Colors.grey.shade500,
+                      color: isDark ? Colors.white60 : Colors.grey.shade500,
                       fontWeight: FontWeight.w500,
                     ),
                   ),
@@ -564,7 +568,7 @@ class _AlertsScreenState extends State<AlertsScreen> with SingleTickerProviderSt
                   )
                 : const Icon(Icons.refresh_rounded, color: Color(0xFF2563EB)),
             style: IconButton.styleFrom(
-              backgroundColor: Colors.blue.shade50,
+              backgroundColor: isDark ? const Color(0xFF1E293B) : Colors.blue.shade50,
               padding: const EdgeInsets.all(10),
             ),
           )
@@ -633,18 +637,19 @@ class _AlertsScreenState extends State<AlertsScreen> with SingleTickerProviderSt
       itemBuilder: (context, index) {
         final act = items[index];
         final actionColor = act['color'] as Color;
+        final isDark = Theme.of(context).brightness == Brightness.dark;
         return Container(
           decoration: BoxDecoration(
-            color: Colors.white,
+            color: Theme.of(context).colorScheme.surface,
             borderRadius: BorderRadius.circular(20),
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withValues(alpha: 0.02),
+                color: isDark ? Colors.transparent : Colors.black.withValues(alpha: 0.02),
                 blurRadius: 12,
                 offset: const Offset(0, 4),
               ),
             ],
-            border: Border.all(color: Colors.grey.shade100),
+            border: Border.all(color: isDark ? Colors.white10 : Colors.grey.shade100),
           ),
           child: Material(
             color: Colors.transparent,
@@ -679,7 +684,7 @@ class _AlertsScreenState extends State<AlertsScreen> with SingleTickerProviderSt
                           style: GoogleFonts.outfit(
                             fontWeight: FontWeight.bold,
                             fontSize: 14,
-                            color: Colors.black87,
+                            color: Theme.of(context).colorScheme.onSurface,
                           ),
                         ),
                         const SizedBox(height: 2),
@@ -687,7 +692,7 @@ class _AlertsScreenState extends State<AlertsScreen> with SingleTickerProviderSt
                           act['sub'] as String,
                           style: GoogleFonts.inter(
                             fontSize: 10,
-                            color: Colors.grey.shade500,
+                            color: isDark ? Colors.white60 : Colors.grey.shade500,
                             fontWeight: FontWeight.w500,
                           ),
                           maxLines: 1,
@@ -731,11 +736,12 @@ class _AlertsScreenState extends State<AlertsScreen> with SingleTickerProviderSt
       },
     ];
 
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: Theme.of(context).colorScheme.surface,
         borderRadius: BorderRadius.circular(20),
         boxShadow: [
           BoxShadow(
@@ -744,7 +750,7 @@ class _AlertsScreenState extends State<AlertsScreen> with SingleTickerProviderSt
             offset: const Offset(0, 4),
           ),
         ],
-        border: Border.all(color: Colors.grey.shade100),
+        border: Border.all(color: isDark ? Colors.white10 : Colors.grey.shade100),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -757,7 +763,7 @@ class _AlertsScreenState extends State<AlertsScreen> with SingleTickerProviderSt
                 style: GoogleFonts.outfit(
                   fontSize: 15,
                   fontWeight: FontWeight.bold,
-                  color: Colors.black87,
+                  color: Theme.of(context).colorScheme.onSurface,
                 ),
               ),
               const Icon(Icons.announcement_outlined, color: Colors.grey, size: 18),
@@ -768,7 +774,7 @@ class _AlertsScreenState extends State<AlertsScreen> with SingleTickerProviderSt
             shrinkWrap: true,
             physics: const NeverScrollableScrollPhysics(),
             itemCount: alerts.length,
-            separatorBuilder: (context, index) => const Divider(height: 24, color: Color(0xFFF1F5F9)),
+            separatorBuilder: (context, index) => Divider(height: 24, color: isDark ? Colors.white10 : const Color(0xFFF1F5F9)),
             itemBuilder: (context, index) {
               final alt = alerts[index];
               final alertColor = alt['color'] as Color;
@@ -789,7 +795,7 @@ class _AlertsScreenState extends State<AlertsScreen> with SingleTickerProviderSt
                           style: GoogleFonts.outfit(
                             fontWeight: FontWeight.bold,
                             fontSize: 14,
-                            color: Colors.black87,
+                            color: Theme.of(context).colorScheme.onSurface,
                           ),
                         ),
                         const SizedBox(height: 2),
@@ -797,7 +803,7 @@ class _AlertsScreenState extends State<AlertsScreen> with SingleTickerProviderSt
                           alt['time'] as String,
                           style: GoogleFonts.inter(
                             fontSize: 11,
-                            color: Colors.grey.shade500,
+                            color: isDark ? Colors.white60 : Colors.grey.shade500,
                           ),
                         ),
                       ],
@@ -835,6 +841,7 @@ class _AlertsScreenState extends State<AlertsScreen> with SingleTickerProviderSt
       {'name': 'Society Head Office', 'number': '+91 9876543212'},
     ];
 
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     return ListView.builder(
       shrinkWrap: true,
       physics: const NeverScrollableScrollPhysics(),
@@ -845,7 +852,7 @@ class _AlertsScreenState extends State<AlertsScreen> with SingleTickerProviderSt
           margin: const EdgeInsets.only(bottom: 10),
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
           decoration: BoxDecoration(
-            color: Colors.white,
+            color: Theme.of(context).colorScheme.surface,
             borderRadius: BorderRadius.circular(18),
             boxShadow: [
               BoxShadow(
@@ -854,7 +861,7 @@ class _AlertsScreenState extends State<AlertsScreen> with SingleTickerProviderSt
                 offset: const Offset(0, 4),
               ),
             ],
-            border: Border.all(color: Colors.grey.shade100),
+            border: Border.all(color: isDark ? Colors.white10 : Colors.grey.shade100),
           ),
           child: Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -867,7 +874,7 @@ class _AlertsScreenState extends State<AlertsScreen> with SingleTickerProviderSt
                     style: GoogleFonts.outfit(
                       fontWeight: FontWeight.bold,
                       fontSize: 14,
-                      color: Colors.black87,
+                      color: Theme.of(context).colorScheme.onSurface,
                     ),
                   ),
                   const SizedBox(height: 2),
@@ -875,7 +882,7 @@ class _AlertsScreenState extends State<AlertsScreen> with SingleTickerProviderSt
                     item['number']!,
                     style: GoogleFonts.inter(
                       fontSize: 12,
-                      color: Colors.grey.shade500,
+                      color: isDark ? Colors.white60 : Colors.grey.shade500,
                     ),
                   ),
                 ],
@@ -886,7 +893,7 @@ class _AlertsScreenState extends State<AlertsScreen> with SingleTickerProviderSt
                     icon: const Icon(Icons.copy_rounded, color: Colors.blueAccent, size: 18),
                     onPressed: () => _copyToClipboard(item['name']!, item['number']!),
                     style: IconButton.styleFrom(
-                      backgroundColor: Colors.blue.shade50.withValues(alpha: 0.5),
+                      backgroundColor: isDark ? const Color(0xFF1E293B) : Colors.blue.shade50.withValues(alpha: 0.5),
                       padding: const EdgeInsets.all(8),
                       minimumSize: const Size(34, 34),
                     ),
@@ -904,7 +911,7 @@ class _AlertsScreenState extends State<AlertsScreen> with SingleTickerProviderSt
                       );
                     },
                     style: IconButton.styleFrom(
-                      backgroundColor: Colors.green.shade50,
+                      backgroundColor: isDark ? const Color(0xFF0F2E1E) : Colors.green.shade50,
                       padding: const EdgeInsets.all(8),
                       minimumSize: const Size(34, 34),
                     ),
@@ -920,11 +927,12 @@ class _AlertsScreenState extends State<AlertsScreen> with SingleTickerProviderSt
 
   // Safety Tips Info Card
   Widget _buildSafetyTipsSection() {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: Theme.of(context).colorScheme.surface,
         borderRadius: BorderRadius.circular(20),
         boxShadow: [
           BoxShadow(
@@ -933,7 +941,7 @@ class _AlertsScreenState extends State<AlertsScreen> with SingleTickerProviderSt
             offset: const Offset(0, 4),
           ),
         ],
-        border: Border.all(color: Colors.grey.shade100),
+        border: Border.all(color: isDark ? Colors.white10 : Colors.grey.shade100),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -947,7 +955,7 @@ class _AlertsScreenState extends State<AlertsScreen> with SingleTickerProviderSt
                 style: GoogleFonts.outfit(
                   fontSize: 15,
                   fontWeight: FontWeight.bold,
-                  color: Colors.black87,
+                  color: Theme.of(context).colorScheme.onSurface,
                 ),
               ),
             ],
@@ -966,6 +974,7 @@ class _AlertsScreenState extends State<AlertsScreen> with SingleTickerProviderSt
   }
 
   Widget _buildTipRow(String tipText) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -979,7 +988,7 @@ class _AlertsScreenState extends State<AlertsScreen> with SingleTickerProviderSt
             tipText,
             style: GoogleFonts.inter(
               fontSize: 12,
-              color: Colors.grey.shade700,
+              color: isDark ? Colors.white70 : Colors.grey.shade700,
               height: 1.4,
             ),
           ),
@@ -997,11 +1006,12 @@ class _AlertsScreenState extends State<AlertsScreen> with SingleTickerProviderSt
       {'date': '20 Jun 2026, 2:40 PM', 'status': 'Pending'},
     ];
 
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: Theme.of(context).colorScheme.surface,
         borderRadius: BorderRadius.circular(20),
         boxShadow: [
           BoxShadow(
@@ -1010,7 +1020,7 @@ class _AlertsScreenState extends State<AlertsScreen> with SingleTickerProviderSt
             offset: const Offset(0, 4),
           ),
         ],
-        border: Border.all(color: Colors.grey.shade100),
+        border: Border.all(color: isDark ? Colors.white10 : Colors.grey.shade100),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -1020,7 +1030,7 @@ class _AlertsScreenState extends State<AlertsScreen> with SingleTickerProviderSt
             style: GoogleFonts.outfit(
               fontSize: 15,
               fontWeight: FontWeight.bold,
-              color: Colors.black87,
+              color: Theme.of(context).colorScheme.onSurface,
             ),
           ),
           const SizedBox(height: 14),
@@ -1028,7 +1038,7 @@ class _AlertsScreenState extends State<AlertsScreen> with SingleTickerProviderSt
             shrinkWrap: true,
             physics: const NeverScrollableScrollPhysics(),
             itemCount: history.length,
-            separatorBuilder: (context, index) => const Divider(height: 20, color: Color(0xFFF1F5F9)),
+            separatorBuilder: (context, index) => Divider(height: 20, color: isDark ? Colors.white10 : const Color(0xFFF1F5F9)),
             itemBuilder: (context, index) {
               final item = history[index];
               return Row(
@@ -1042,7 +1052,7 @@ class _AlertsScreenState extends State<AlertsScreen> with SingleTickerProviderSt
                         style: GoogleFonts.outfit(
                           fontWeight: FontWeight.bold,
                           fontSize: 13,
-                          color: Colors.black87,
+                          color: Theme.of(context).colorScheme.onSurface,
                         ),
                       ),
                       const SizedBox(height: 2),
@@ -1050,7 +1060,7 @@ class _AlertsScreenState extends State<AlertsScreen> with SingleTickerProviderSt
                         item['date']!,
                         style: GoogleFonts.inter(
                           fontSize: 11,
-                          color: Colors.grey.shade500,
+                          color: isDark ? Colors.white60 : Colors.grey.shade500,
                         ),
                       ),
                     ],
@@ -1066,20 +1076,21 @@ class _AlertsScreenState extends State<AlertsScreen> with SingleTickerProviderSt
   }
 
   Widget _buildHistoryStatusChip(String status) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     Color chipColor;
     Color textColor;
     switch (status) {
       case 'Resolved':
-        chipColor = Colors.green.shade50;
-        textColor = Colors.green.shade700;
+        chipColor = isDark ? const Color(0xFF0F2E1E) : Colors.green.shade50;
+        textColor = isDark ? const Color(0xFF4ADE80) : Colors.green.shade700;
         break;
       case 'Pending':
-        chipColor = Colors.orange.shade50;
-        textColor = Colors.orange.shade700;
+        chipColor = isDark ? const Color(0xFF3B250F) : Colors.orange.shade50;
+        textColor = isDark ? const Color(0xFFFBBF24) : Colors.orange.shade700;
         break;
       default:
-        chipColor = Colors.grey.shade100;
-        textColor = Colors.grey.shade600;
+        chipColor = isDark ? Colors.white10 : Colors.grey.shade100;
+        textColor = isDark ? Colors.white60 : Colors.grey.shade600;
         break;
     }
 
@@ -1102,12 +1113,13 @@ class _AlertsScreenState extends State<AlertsScreen> with SingleTickerProviderSt
 
   // Warning Section Builder
   Widget _buildBottomWarningSection() {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: const Color(0xFFFFFBEB),
+        color: isDark ? const Color(0xFF2E240F) : const Color(0xFFFFFBEB),
         borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: const Color(0xFFFEF3C7), width: 1.5),
+        border: Border.all(color: isDark ? const Color(0xFF4C3615) : const Color(0xFFFEF3C7), width: 1.5),
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -1120,7 +1132,7 @@ class _AlertsScreenState extends State<AlertsScreen> with SingleTickerProviderSt
               style: GoogleFonts.inter(
                 fontSize: 12,
                 fontWeight: FontWeight.w600,
-                color: const Color(0xFF92400E),
+                color: isDark ? const Color(0xFFFBBF24) : const Color(0xFF92400E),
                 height: 1.4,
               ),
             ),
@@ -1133,6 +1145,7 @@ class _AlertsScreenState extends State<AlertsScreen> with SingleTickerProviderSt
   Widget _buildActiveGuardianAlerts() {
     final provider = context.watch<NotificationsProvider>();
     final alerts = provider.guardianNotifications;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
 
     if (alerts.isEmpty) return const SizedBox.shrink();
 
@@ -1144,7 +1157,7 @@ class _AlertsScreenState extends State<AlertsScreen> with SingleTickerProviderSt
           style: GoogleFonts.outfit(
             fontSize: 16,
             fontWeight: FontWeight.w800,
-            color: Colors.red.shade800,
+            color: isDark ? Colors.redAccent : Colors.red.shade800,
           ),
         ),
         const SizedBox(height: 12),
@@ -1163,9 +1176,9 @@ class _AlertsScreenState extends State<AlertsScreen> with SingleTickerProviderSt
             return Container(
               margin: const EdgeInsets.only(bottom: 12),
               decoration: BoxDecoration(
-                color: Colors.red.shade50,
+                color: isDark ? const Color(0xFF2E1112) : Colors.red.shade50,
                 borderRadius: BorderRadius.circular(20),
-                border: Border.all(color: Colors.red.shade200, width: 1.5),
+                border: Border.all(color: isDark ? const Color(0xFF4A1D20) : Colors.red.shade200, width: 1.5),
                 boxShadow: [
                   BoxShadow(
                     color: Colors.red.withValues(alpha: 0.05),
@@ -1200,7 +1213,7 @@ class _AlertsScreenState extends State<AlertsScreen> with SingleTickerProviderSt
                                   style: GoogleFonts.outfit(
                                     fontWeight: FontWeight.bold,
                                     fontSize: 15,
-                                    color: Colors.red.shade900,
+                                    color: isDark ? Colors.redAccent : Colors.red.shade900,
                                   ),
                                 ),
                               ],
@@ -1228,7 +1241,7 @@ class _AlertsScreenState extends State<AlertsScreen> with SingleTickerProviderSt
                           style: GoogleFonts.inter(
                             fontSize: 12,
                             fontWeight: FontWeight.bold,
-                            color: Colors.black87,
+                            color: Theme.of(context).colorScheme.onSurface,
                           ),
                         ),
                         const SizedBox(height: 4),
@@ -1236,7 +1249,7 @@ class _AlertsScreenState extends State<AlertsScreen> with SingleTickerProviderSt
                           alert.incidentMessage.isNotEmpty ? alert.incidentMessage : 'Immediate help needed.',
                           style: GoogleFonts.inter(
                             fontSize: 12,
-                            color: Colors.grey.shade700,
+                            color: isDark ? Colors.white70 : Colors.grey.shade700,
                           ),
                         ),
                         const SizedBox(height: 10),
@@ -1247,7 +1260,7 @@ class _AlertsScreenState extends State<AlertsScreen> with SingleTickerProviderSt
                               DateFormat('dd MMM, hh:mm a').format(alert.createdAt),
                               style: GoogleFonts.inter(
                                 fontSize: 10,
-                                color: Colors.grey.shade500,
+                                color: isDark ? Colors.white60 : Colors.grey.shade500,
                                 fontWeight: FontWeight.bold,
                               ),
                             ),
@@ -1258,11 +1271,11 @@ class _AlertsScreenState extends State<AlertsScreen> with SingleTickerProviderSt
                                   style: GoogleFonts.inter(
                                     fontSize: 11,
                                     fontWeight: FontWeight.bold,
-                                    color: Colors.red.shade900,
+                                    color: isDark ? Colors.redAccent : Colors.red.shade900,
                                   ),
                                 ),
                                 const SizedBox(width: 4),
-                                Icon(Icons.arrow_forward_ios_rounded, color: Colors.red.shade900, size: 10),
+                                Icon(Icons.arrow_forward_ios_rounded, color: isDark ? Colors.redAccent : Colors.red.shade900, size: 10),
                               ],
                             ),
                           ],

@@ -45,3 +45,28 @@ class NotificationViewSet(viewsets.ModelViewSet):
             is_read=False
         ).update(is_read=True)
         return Response({"message": "All notifications marked as read"})
+
+
+from .models import FCMDevice, NotificationTemplate, NotificationLog
+from .serializers import FCMDeviceSerializer, NotificationTemplateSerializer, NotificationLogSerializer
+
+class FCMDeviceViewSet(viewsets.ModelViewSet):
+    queryset = FCMDevice.objects.all()
+    serializer_class = FCMDeviceSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def perform_create(self, serializer):
+        serializer.save(user=self.request.user)
+
+
+class NotificationTemplateViewSet(viewsets.ModelViewSet):
+    queryset = NotificationTemplate.objects.all()
+    serializer_class = NotificationTemplateSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+
+class NotificationLogViewSet(viewsets.ReadOnlyModelViewSet):
+    queryset = NotificationLog.objects.all().order_by('-created_at')
+    serializer_class = NotificationLogSerializer
+    permission_classes = [permissions.IsAuthenticated]
+

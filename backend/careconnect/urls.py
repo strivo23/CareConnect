@@ -19,6 +19,17 @@ from django.urls import path, include
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 from drf_spectacular.views import SpectacularAPIView, SpectacularSwaggerView, SpectacularRedocView
 from sos.views import ReverseGeocodeAPIView
+from accounts.views import SendOTPAPIView, VerifyOTPAPIView, ResendOTPAPIView
+
+from emergency.views import (
+    GenerateGuardianCodeView,
+    MyGuardianCodeView,
+    RespondGuardianLinkView,
+    LinkGuardianView,
+    UnlinkGuardianView,
+    ResidentGuardiansView,
+    ChangePrimaryGuardianView,
+)
 
 urlpatterns = [
     path("admin/", admin.site.urls),
@@ -26,6 +37,11 @@ urlpatterns = [
     # JWT auth
     path("api/token/",         TokenObtainPairView.as_view(),  name="token_obtain_pair"),
     path("api/token/refresh/", TokenRefreshView.as_view(),     name="token_refresh"),
+
+    # OTP auth
+    path("api/auth/send-otp/",     SendOTPAPIView.as_view(),       name="send_otp"),
+    path("api/auth/verify-otp/",   VerifyOTPAPIView.as_view(),     name="verify_otp"),
+    path("api/auth/resend-otp/",   ResendOTPAPIView.as_view(),     name="resend_otp"),
 
     # App routes
     path("api/accounts/",      include("accounts.urls")),
@@ -35,8 +51,21 @@ urlpatterns = [
     path("api/sos/",           include("sos.urls")),
     path("api/geocode/reverse/", ReverseGeocodeAPIView.as_view(), name="geocode-reverse"),
 
+    # Direct Guardian & Resident Code Linking APIs
+    path("api/guardian/generate-code/", GenerateGuardianCodeView.as_view(), name="guardian-generate-code"),
+    path("api/guardian/my-code/", MyGuardianCodeView.as_view(), name="guardian-my-code"),
+    path("api/guardian/respond-link/", RespondGuardianLinkView.as_view(), name="guardian-respond-link"),
+    path("api/resident/link-guardian/", LinkGuardianView.as_view(), name="resident-link-guardian"),
+    path("api/resident/unlink-guardian/", UnlinkGuardianView.as_view(), name="resident-unlink-guardian"),
+    path("api/resident/unlink-guardian/<int:pk>/", UnlinkGuardianView.as_view(), name="resident-unlink-guardian-pk"),
+    path("api/resident/guardians/", ResidentGuardiansView.as_view(), name="resident-guardians"),
+    path("api/resident/change-primary/", ChangePrimaryGuardianView.as_view(), name="resident-change-primary"),
+
+
+
     # API Documentation
     path("api/schema/",        SpectacularAPIView.as_view(),        name="schema"),
     path("api/docs/swagger/",  SpectacularSwaggerView.as_view(url_name="schema"), name="swagger-ui"),
     path("api/docs/redoc/",    SpectacularRedocView.as_view(url_name="schema"),   name="redoc"),
 ]
+

@@ -10,6 +10,9 @@ import '../dashboard/alerts_screen.dart';
 import '../dashboard/home_screen.dart';
 import '../notifications/notifications_screen.dart';
 import '../settings/settings_screen.dart';
+import 'volunteer_dashboard.dart';
+import 'security_dashboard.dart';
+
 
 import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
@@ -46,6 +49,13 @@ class _DashboardShellState extends State<DashboardShell> {
       await notificationsProvider.load();
       await notificationsProvider.loadCachedGuardianNotifications();
       notificationsProvider.startGuardianPolling();
+
+      // Setup mock notification permissions and token registration
+      debugPrint('[NOTIFICATION SETUP] Requesting push notification permissions... Granted.');
+      final mockToken = 'fcm_token_mock_${user?.id ?? "anonymous"}';
+      debugPrint('[NOTIFICATION SETUP] Registered FCM token: $mockToken');
+      await notificationsProvider.registerDeviceToken(mockToken);
+
 
       // Callback when new high priority emergency notification is received
       notificationsProvider.onNewEmergencyNotification = (notification) {
@@ -144,9 +154,14 @@ class _DashboardShellState extends State<DashboardShell> {
   @override
   Widget build(BuildContext context) {
     final unreadCount = context.watch<NotificationsProvider>().unreadCount;
+    final role = context.watch<AuthProvider>().user?.role ?? 'RESIDENT';
 
     final pages = [
-      const HomeScreen(),
+      role == 'VOLUNTEER'
+          ? const VolunteerDashboardScreen()
+          : role == 'SECURITY'
+              ? const SecurityDashboardScreen()
+              : const HomeScreen(),
       const AlertsScreen(),
       const ContactsScreen(),
       const NotificationsScreen(),

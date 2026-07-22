@@ -27,6 +27,13 @@ class AuthRepository {
     int? societyId,
     int? blockId,
     int? flatId,
+    int? relationship,
+    String? skills,
+    String? availability,
+    String? serviceArea,
+    String? shift,
+    String? employeeId,
+    int? assignedSocietyId,
   }) async {
     final response = await _client.post(
       '/api/accounts/register/',
@@ -39,8 +46,16 @@ class AuthRepository {
         if (societyId != null) 'society': societyId,
         if (blockId != null) 'block': blockId,
         if (flatId != null) 'flat': flatId,
+        if (relationship != null) 'relationship': relationship,
+        if (skills != null) 'skills': skills,
+        if (availability != null) 'availability': availability,
+        if (serviceArea != null) 'service_area': serviceArea,
+        if (shift != null) 'shift': shift,
+        if (employeeId != null) 'employee_id': employeeId,
+        if (assignedSocietyId != null) 'assigned_society': assignedSocietyId,
       },
     );
+
 
     final data = response.data is Map<String, dynamic>
         ? Map<String, dynamic>.from(response.data as Map)
@@ -94,9 +109,34 @@ class AuthRepository {
     await LocalStorageService.instance.clearAuth();
   }
 
+  Future<bool> sendOTP({required String email}) async {
+    final response = await _client.post(
+      '/api/auth/send-otp/',
+      data: {'email': email},
+    );
+    return response.statusCode == 200;
+  }
+
+  Future<bool> verifyOTP({required String email, required String otp}) async {
+    final response = await _client.post(
+      '/api/auth/verify-otp/',
+      data: {'email': email, 'otp': otp},
+    );
+    return response.statusCode == 200;
+  }
+
+  Future<bool> resendOTP({required String email}) async {
+    final response = await _client.post(
+      '/api/auth/resend-otp/',
+      data: {'email': email},
+    );
+    return response.statusCode == 200;
+  }
+
   Future<void> _persistSession(AuthSession session) async {
     await LocalStorageService.instance.saveString(AppConstants.apiTokenKey, session.accessToken);
     await LocalStorageService.instance.saveString(AppConstants.apiRefreshTokenKey, session.refreshToken);
     await LocalStorageService.instance.saveJson(AppConstants.apiUserKey, session.user.toJson());
   }
 }
+

@@ -274,14 +274,15 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
     final yesterdayAlerts = filtered.where((n) => n.dateGroup == 'Yesterday').toList();
     final olderAlerts = filtered.where((n) => n.dateGroup == 'Older').toList();
 
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     return Scaffold(
-      backgroundColor: Colors.grey.shade50,
+      backgroundColor: isDark ? const Color(0xFF111418) : Colors.grey.shade50,
       appBar: AppBar(
-        backgroundColor: Colors.white,
+        backgroundColor: Theme.of(context).colorScheme.surface,
         elevation: 0,
         leading: Navigator.canPop(context)
             ? IconButton(
-                icon: const Icon(Icons.arrow_back_ios_new_rounded, color: Colors.black87, size: 20),
+                icon: Icon(Icons.arrow_back_ios_new_rounded, color: Theme.of(context).colorScheme.onSurface, size: 20),
                 onPressed: () => Navigator.maybePop(context),
               )
             : null,
@@ -291,7 +292,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
             Text(
               'Notifications',
               style: GoogleFonts.outfit(
-                color: Colors.black87,
+                color: Theme.of(context).colorScheme.onSurface,
                 fontSize: 22,
                 fontWeight: FontWeight.w900,
               ),
@@ -299,7 +300,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
             Text(
               'Stay updated with society activities and alerts.',
               style: GoogleFonts.inter(
-                color: Colors.grey.shade600,
+                color: isDark ? Colors.white60 : Colors.grey.shade600,
                 fontSize: 12,
                 fontWeight: FontWeight.w500,
               ),
@@ -316,10 +317,9 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
           Padding(
             padding: const EdgeInsets.only(right: 12.0),
             child: IconButton(
-              icon: const Icon(Icons.filter_list_rounded, color: Colors.black87),
+              icon: Icon(Icons.filter_list_rounded, color: Theme.of(context).colorScheme.onSurface),
               tooltip: 'Filter Options',
               onPressed: () {
-                // Focus / scroll chips or open a custom filter popup dialog
                 ScaffoldMessenger.of(context).showSnackBar(
                   const SnackBar(
                     content: Text('Scroll category chips below to filter by alerts.'),
@@ -364,7 +364,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                       value: _todayCount.toString(),
                       icon: Icons.today_rounded,
                       color: const Color(0xFF2563EB),
-                      bgColor: Colors.blue.shade50,
+                      bgColor: isDark ? const Color(0xFF1E293B) : Colors.blue.shade50,
                     ),
                   ),
                   const SizedBox(width: 10),
@@ -374,7 +374,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                       value: _weekCount.toString(),
                       icon: Icons.date_range_rounded,
                       color: Colors.purple,
-                      bgColor: Colors.purple.shade50,
+                      bgColor: isDark ? const Color(0xFF2E1B3B) : Colors.purple.shade50,
                     ),
                   ),
                 ],
@@ -384,7 +384,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
               // Search Bar
               Container(
                 decoration: BoxDecoration(
-                  color: Colors.white,
+                  color: Theme.of(context).colorScheme.surface,
                   borderRadius: BorderRadius.circular(24),
                   boxShadow: [
                     BoxShadow(
@@ -396,6 +396,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                 ),
                 child: TextField(
                   controller: _searchController,
+                  style: GoogleFonts.inter(color: Theme.of(context).colorScheme.onSurface, fontSize: 14),
                   onChanged: (val) {
                     setState(() {
                       _searchQuery = val;
@@ -403,11 +404,11 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                   },
                   decoration: InputDecoration(
                     hintText: 'Search notifications...',
-                    hintStyle: GoogleFonts.inter(color: Colors.grey.shade400, fontSize: 14),
-                    prefixIcon: Icon(Icons.search_rounded, color: Colors.grey.shade400),
+                    hintStyle: GoogleFonts.inter(color: isDark ? Colors.white38 : Colors.grey.shade400, fontSize: 14),
+                    prefixIcon: Icon(Icons.search_rounded, color: isDark ? Colors.white38 : Colors.grey.shade400),
                     suffixIcon: _searchQuery.isNotEmpty
                         ? IconButton(
-                            icon: Icon(Icons.clear_rounded, color: Colors.grey.shade600),
+                            icon: Icon(Icons.clear_rounded, color: isDark ? Colors.white60 : Colors.grey.shade600),
                             onPressed: () {
                               _searchController.clear();
                               setState(() {
@@ -442,17 +443,17 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                             _selectedFilter = item;
                           });
                         },
-                        selectedColor: Colors.blue.shade50,
-                        backgroundColor: Colors.white,
+                        selectedColor: isDark ? const Color(0xFF1E293B) : Colors.blue.shade50,
+                        backgroundColor: Theme.of(context).colorScheme.surface,
                         labelStyle: GoogleFonts.inter(
-                          color: isSelected ? const Color(0xFF2563EB) : Colors.grey.shade700,
+                          color: isSelected ? const Color(0xFF2563EB) : (isDark ? Colors.white60 : Colors.grey.shade700),
                           fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
                           fontSize: 13,
                         ),
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(20),
                           side: BorderSide(
-                            color: isSelected ? const Color(0xFF2563EB).withValues(alpha: 0.3) : Colors.grey.shade200,
+                            color: isSelected ? const Color(0xFF2563EB).withValues(alpha: 0.3) : (isDark ? Colors.white10 : Colors.grey.shade200),
                           ),
                         ),
                         elevation: 0,
@@ -507,10 +508,11 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
     required Color color,
     required Color bgColor,
   }) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: Theme.of(context).colorScheme.surface,
         borderRadius: BorderRadius.circular(20),
         boxShadow: [
           BoxShadow(
@@ -519,7 +521,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
             offset: const Offset(0, 4),
           ),
         ],
-        border: Border.all(color: Colors.grey.shade100),
+        border: Border.all(color: isDark ? Colors.white10 : Colors.grey.shade100),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -532,7 +534,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                 style: GoogleFonts.outfit(
                   fontSize: 20,
                   fontWeight: FontWeight.w900,
-                  color: Colors.black87,
+                  color: Theme.of(context).colorScheme.onSurface,
                 ),
               ),
               CircleAvatar(
@@ -547,7 +549,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
             title,
             style: GoogleFonts.inter(
               fontSize: 11,
-              color: Colors.grey.shade500,
+              color: isDark ? Colors.white60 : Colors.grey.shade500,
               fontWeight: FontWeight.w600,
             ),
           ),
@@ -632,11 +634,12 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
   Widget _buildNotificationCard(LocalNotification n) {
     final catColor = _colorForCategory(n.category);
     final catIcon = _iconForCategory(n.category);
+    final isDark = Theme.of(context).brightness == Brightness.dark;
 
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: Theme.of(context).colorScheme.surface,
         borderRadius: BorderRadius.circular(20),
         boxShadow: [
           BoxShadow(
@@ -645,7 +648,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
             offset: const Offset(0, 4),
           ),
         ],
-        border: Border.all(color: Colors.grey.shade100),
+        border: Border.all(color: isDark ? Colors.white10 : Colors.grey.shade100),
       ),
       child: Material(
         color: Colors.transparent,
@@ -692,7 +695,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                               style: GoogleFonts.outfit(
                                 fontWeight: FontWeight.bold,
                                 fontSize: 14,
-                                color: Colors.black87,
+                                color: Theme.of(context).colorScheme.onSurface,
                               ),
                             ),
                           ),
@@ -700,7 +703,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                             n.time,
                             style: GoogleFonts.inter(
                               fontSize: 10,
-                              color: Colors.grey.shade400,
+                              color: isDark ? Colors.white38 : Colors.grey.shade400,
                             ),
                           ),
                         ],
@@ -710,7 +713,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                         n.message,
                         style: GoogleFonts.inter(
                           fontSize: 12,
-                          color: Colors.grey.shade700,
+                          color: isDark ? Colors.white70 : Colors.grey.shade700,
                           height: 1.4,
                         ),
                       ),
@@ -746,14 +749,15 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
 
   // Empty State Widget Builder
   Widget _buildEmptyState() {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     return Center(
       child: Container(
         padding: const EdgeInsets.symmetric(vertical: 48, horizontal: 24),
         width: double.infinity,
         decoration: BoxDecoration(
-          color: Colors.white,
+          color: Theme.of(context).colorScheme.surface,
           borderRadius: BorderRadius.circular(24),
-          border: Border.all(color: Colors.grey.shade100),
+          border: Border.all(color: isDark ? Colors.white10 : Colors.grey.shade100),
         ),
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -762,8 +766,8 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
             Container(
               height: 80,
               width: 80,
-              decoration: const BoxDecoration(
-                color: Color(0xFFEFF6FF), // soft blue background
+              decoration: BoxDecoration(
+                color: isDark ? const Color(0xFF1E293B) : const Color(0xFFEFF6FF),
                 shape: BoxShape.circle,
               ),
               child: const Icon(
@@ -778,7 +782,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
               style: GoogleFonts.outfit(
                 fontSize: 18,
                 fontWeight: FontWeight.bold,
-                color: Colors.black87,
+                color: Theme.of(context).colorScheme.onSurface,
               ),
             ),
             const SizedBox(height: 8),
@@ -787,7 +791,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
               textAlign: TextAlign.center,
               style: GoogleFonts.inter(
                 fontSize: 13,
-                color: Colors.grey.shade500,
+                color: isDark ? Colors.white60 : Colors.grey.shade500,
                 height: 1.4,
               ),
             ),

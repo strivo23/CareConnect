@@ -24,6 +24,8 @@ const menuItems = [
   { text: 'Emergency Contacts', icon: <MdPhone size={24} />, path: '/emergency' },
   { text: 'Users', icon: <MdAdminPanelSettings size={24} />, path: '/users' },
   { text: 'Alerts', icon: <MdNotificationsActive size={24} />, path: '/alerts' },
+  { text: 'Notification Templates', icon: <MdNotificationsActive size={24} />, path: '/notification-templates' },
+  { text: 'Escalation Settings', icon: <MdSettings size={24} />, path: '/escalation-settings' },
   { text: 'Reports', icon: <MdAssessment size={24} />, path: '/reports' },
   { text: 'Settings', icon: <MdSettings size={24} />, path: '/settings' },
 ];

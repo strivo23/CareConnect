@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart' as import_services;
 import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
 
@@ -8,6 +9,8 @@ import '../../core/constants/app_constants.dart';
 import '../../core/services/local_storage_service.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/widgets/app_card.dart';
+import '../../services/contacts_repository.dart';
+
 import '../../core/widgets/section_header.dart';
 import '../../providers/app_state_provider.dart';
 import '../../providers/auth_provider.dart';
@@ -39,6 +42,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
   Widget build(BuildContext context) {
     final auth = context.watch<AuthProvider>();
     final resident = context.watch<AppStateProvider>().residentProfile;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
 
     return Scaffold(
       appBar: AppBar(
@@ -73,7 +77,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 Text(auth.user?.phoneNumber ?? ''),
                 if (auth.user?.email.isNotEmpty == true) ...[
                   const SizedBox(height: 2),
-                  Text(auth.user!.email, style: TextStyle(color: Colors.grey.shade600, fontSize: 13)),
+                  Text(auth.user!.email, style: TextStyle(color: isDark ? Colors.white60 : Colors.grey.shade600, fontSize: 13)),
                 ],
               ],
             ),
@@ -90,10 +94,13 @@ class _ProfileScreenState extends State<ProfileScreen> {
               ],
             ),
           ),
+          const SizedBox(height: 16),
+          const _GuardianCodeSection(),
         ],
       ),
     );
   }
+
 
   Widget _row(String label, String value) {
     return Padding(
@@ -187,3 +194,207 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 }
+
+class _GuardianCodeSection extends StatefulWidget {
+  const _GuardianCodeSection();
+
+  @override
+  State<_GuardianCodeSection> createState() => _GuardianCodeSectionState();
+}
+
+class _GuardianCodeSectionState extends State<_GuardianCodeSection> {
+  String? _guardianCode;
+  List<dynamic> _linkedResidents = [];
+  List<dynamic> _pendingRequests = [];
+  bool _isLoading = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _fetchGuardianCodeInfo();
+  }
+
+  Future<void> _fetchGuardianCodeInfo() async {
+    setState(() => _isLoading = true);
+    try {
+      final repo = ContactsRepository();
+      final res = await repo.fetchMyGuardianCode();
+      if (mounted) {
+        setState(() {
+          _guardianCode = res['guardian_code'] as String?;
+          _linkedResidents = (res['linked_residents'] as List?) ?? [];
+          _pendingRequests = (res['pending_requests'] as List?) ?? [];
+        });
+      }
+    } catch (e) {
+      debugPrint('Error fetching guardian code info: $e');
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
+  Future<void> _respondLink(int linkId, String action) async {
+    try {
+      final repo = ContactsRepository();
+      await repo.respondGuardianLink(linkId: linkId, action: action);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(action == 'accept' ? 'Guardian request accepted!' : 'Guardian request declined.'),
+          backgroundColor: action == 'accept' ? AppTheme.success : AppTheme.danger,
+        ),
+      );
+      _fetchGuardianCodeInfo();
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Failed to process request.'), backgroundColor: AppTheme.danger),
+      );
+    }
+  }
+
+  void _copyCode() {
+    if (_guardianCode != null && _guardianCode!.isNotEmpty) {
+      import_services.Clipboard.setData(import_services.ClipboardData(text: _guardianCode!));
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Guardian Code copied to clipboard!'),
+          behavior: SnackBarBehavior.floating,
+          backgroundColor: AppTheme.success,
+        ),
+      );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
+    return AppCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text('My Guardian Code', style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold)),
+              IconButton(
+                icon: const Icon(Icons.refresh_rounded, size: 20),
+                onPressed: _fetchGuardianCodeInfo,
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          if (_isLoading)
+            const Center(child: Padding(padding: EdgeInsets.all(16.0), child: CircularProgressIndicator()))
+          else ...[
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              decoration: BoxDecoration(
+                color: isDark ? Colors.blue.withOpacity(0.15) : Colors.blue.shade50,
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(color: AppTheme.primary.withOpacity(0.3)),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.qr_code_rounded, color: AppTheme.primary, size: 28),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
+                      _guardianCode ?? 'CC-GD-XXXXXX',
+                      style: TextStyle(
+                        fontFamily: 'monospace',
+                        fontSize: 20,
+                        fontWeight: FontWeight.w900,
+                        letterSpacing: 2,
+                        color: isDark ? Colors.white : Colors.blue.shade900,
+                      ),
+                    ),
+                  ),
+                  ElevatedButton.icon(
+                    onPressed: _copyCode,
+                    icon: const Icon(Icons.copy_rounded, size: 16),
+                    label: const Text('Copy'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppTheme.primary,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            if (_pendingRequests.isNotEmpty) ...[
+              const SizedBox(height: 16),
+              Text('Pending Link Requests', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.orange.shade800, fontSize: 13)),
+              const SizedBox(height: 8),
+              ..._pendingRequests.map((req) {
+                final linkId = req['id'] as int;
+                final resName = req['resident_name'] ?? 'Resident';
+                final rel = req['relationship_name'] ?? 'Guardian';
+                return Container(
+                  margin: const EdgeInsets.only(bottom: 8),
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: isDark ? Colors.grey.shade900 : Colors.grey.shade100,
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(resName, style: const TextStyle(fontWeight: FontWeight.bold)),
+                            Text('Wants to link as $rel', style: const TextStyle(fontSize: 12, color: Colors.grey)),
+                          ],
+                        ),
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.check_circle_rounded, color: Colors.green),
+                        onPressed: () => _respondLink(linkId, 'accept'),
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.cancel_rounded, color: Colors.red),
+                        onPressed: () => _respondLink(linkId, 'reject'),
+                      ),
+                    ],
+                  ),
+                );
+              }),
+            ],
+            const SizedBox(height: 16),
+            Text('Residents Linked', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: isDark ? Colors.white70 : Colors.grey.shade700)),
+            const SizedBox(height: 8),
+            if (_linkedResidents.isEmpty)
+              const Text('No residents linked yet.', style: TextStyle(fontSize: 12, color: Colors.grey, fontStyle: FontStyle.italic))
+            else
+              Column(
+                children: _linkedResidents.map((item) {
+                  final resName = item['resident_name'] ?? 'Resident';
+                  final rel = item['relationship_name'] ?? 'Guardian';
+                  final isPrimary = item['is_primary'] == true;
+                  return Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 4.0),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.person_pin_rounded, size: 18, color: AppTheme.primary),
+                        const SizedBox(width: 8),
+                        Expanded(child: Text('$resName ($rel)', style: const TextStyle(fontWeight: FontWeight.w600))),
+                        if (isPrimary)
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                            decoration: BoxDecoration(color: Colors.green.shade100, borderRadius: BorderRadius.circular(8)),
+                            child: const Text('Primary', style: TextStyle(fontSize: 10, color: Colors.green, fontWeight: FontWeight.bold)),
+                          ),
+                      ],
+                    ),
+                  );
+                }).toList(),
+              ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+

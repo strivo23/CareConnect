@@ -52,6 +52,12 @@ class NotificationRepository {
     } catch (_) {}
   }
 
+  Future<void> registerDeviceToken(String token) async {
+    try {
+      await _client.post('/api/notifications/devices/', data: {'token': token});
+    } catch (_) {}
+  }
+
   Future<void> _cache(List<AppNotificationModel> notifications) async {
     final jsonString = jsonEncode(
       notifications.map((item) => item.toJson()).toList(),

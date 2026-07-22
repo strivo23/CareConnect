@@ -50,7 +50,90 @@ class ContactsRepository {
     await _client.delete('/api/emergency/contacts/$id/');
   }
 
+  Future<bool> sendContactVerification({required int contactId}) async {
+    final response = await _client.post(
+      '/api/emergency/contacts/send-verification/',
+      data: {'contact_id': contactId},
+    );
+    return response.statusCode == 200;
+  }
+
+  Future<bool> verifyContactOTP({required int contactId, required String otp}) async {
+    final response = await _client.post(
+      '/api/emergency/contacts/verify/',
+      data: {'contact_id': contactId, 'otp': otp},
+    );
+    return response.statusCode == 200;
+  }
+
+  Future<bool> resendContactVerification({required int contactId}) async {
+    final response = await _client.post(
+      '/api/emergency/contacts/resend/',
+      data: {'contact_id': contactId},
+    );
+    return response.statusCode == 200;
+  }
+
   Future<void> verifyContact(int id) async {
     await _client.post('/api/emergency/contacts/$id/verify/');
   }
+
+  // --- Guardian Code Based Linking API Methods ---
+
+  Future<Map<String, dynamic>> fetchMyGuardianCode() async {
+    final response = await _client.get('/api/guardian/my-code/');
+    return Map<String, dynamic>.from(response.data as Map);
+  }
+
+  Future<String> generateGuardianCode() async {
+    final response = await _client.post('/api/guardian/generate-code/');
+    final data = Map<String, dynamic>.from(response.data as Map);
+    return data['guardian_code'] as String? ?? '';
+  }
+
+  Future<Map<String, dynamic>> linkGuardian({
+    required String guardianCode,
+    required String relationship,
+    bool isPrimary = false,
+  }) async {
+    final response = await _client.post(
+      '/api/resident/link-guardian/',
+      data: {
+        'guardian_code': guardianCode,
+        'relationship': relationship,
+        'is_primary': isPrimary,
+      },
+    );
+    return Map<String, dynamic>.from(response.data as Map);
+  }
+
+  Future<List<Map<String, dynamic>>> fetchResidentGuardians() async {
+    final response = await _client.get('/api/resident/guardians/');
+    final items = response.data is List ? response.data as List : [];
+    return items.map((e) => Map<String, dynamic>.from(e as Map)).toList();
+  }
+
+  Future<void> unlinkGuardian(int id) async {
+    await _client.delete(
+      '/api/resident/unlink-guardian/$id/',
+      data: {'guardian_id': id},
+    );
+  }
+
+  Future<void> changePrimaryGuardian(int id) async {
+    await _client.patch(
+      '/api/resident/change-primary/',
+      data: {'guardian_id': id},
+    );
+  }
+
+  Future<void> respondGuardianLink({required int linkId, required String action}) async {
+    await _client.post(
+      '/api/guardian/respond-link/',
+      data: {'link_id': linkId, 'action': action},
+    );
+  }
 }
+
+
+

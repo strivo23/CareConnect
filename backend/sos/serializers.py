@@ -30,14 +30,14 @@ class EmergencyCategorySerializer(serializers.ModelSerializer):
 class SOSIncidentSerializer(serializers.ModelSerializer):
     """Full read serializer returned in list / retrieve / history endpoints."""
 
-    resident_name = serializers.CharField(
-        source="resident.full_name", read_only=True
-    )
+    resident_name = serializers.SerializerMethodField()
     resident_email = serializers.EmailField(
         source="resident.email", read_only=True
     )
-    category_name = serializers.CharField(
-        source="category.name", read_only=True
+    category_name = serializers.SerializerMethodField()
+    resolved_address = serializers.SerializerMethodField()
+    triggered_time = serializers.DateTimeField(
+        source="created_at", read_only=True
     )
 
     class Meta:
@@ -54,11 +54,44 @@ class SOSIncidentSerializer(serializers.ModelSerializer):
             "longitude",
             "status",
             "address",
+            "resolved_address",
             "priority",
             "created_at",
+            "triggered_time",
             "updated_at",
         ]
         read_only_fields = fields  # entire serializer is read-only
+
+    def get_resident_name(self, obj):
+        if obj.resident:
+            name = getattr(obj.resident, "full_name", None) or obj.resident.get_full_name()
+            if name and name.strip():
+                return name.strip()
+            if obj.resident.email:
+                return obj.resident.email.split("@")[0].capitalize()
+        return "Unknown Resident"
+
+    def get_category_name(self, obj):
+        if obj.category and obj.category.name:
+            return obj.category.name
+        return "SOS Emergency"
+
+    def get_resolved_address(self, obj):
+        if obj.address and obj.address.strip() and obj.address.strip() not in ["Address not resolved", "Address unavailable"]:
+            return obj.address.strip()
+        if obj.latitude is not None and obj.longitude is not None:
+            from .services import SOSService
+            resolved = SOSService.reverse_geocode(obj.latitude, obj.longitude)
+            if resolved and resolved != "Location could not be resolved":
+                obj.address = resolved
+                obj.save(update_fields=["address"])
+                return resolved
+            return "Location could not be resolved"
+        return "Location unavailable"
+
+
+
+
 
 
 # ---------------------------------------------------------------------------
@@ -66,25 +99,46 @@ class SOSIncidentSerializer(serializers.ModelSerializer):
 # ---------------------------------------------------------------------------
 
 class SOSSendSerializer(serializers.ModelSerializer):
-    """
-    Used for POST /api/sos/send/.
-    Validates:
-      - category must be active
-      - latitude   -90   to  90
-      - longitude  -180  to 180
-      - message    max 500 characters
-    """
+    category = serializers.PrimaryKeyRelatedField(
+        queryset=EmergencyCategory.objects.all(),
+        required=False,
+        allow_null=True
+    )
+
 
     class Meta:
         model = SOSIncident
         fields = ["category", "message", "latitude", "longitude", "address", "priority"]
 
+    def to_internal_value(self, data):
+        if isinstance(data, dict):
+            data = data.copy()
+            for field in ["latitude", "longitude"]:
+                val = data.get(field)
+                if val is not None:
+                    try:
+                        data[field] = round(float(val), 6)
+                    except (ValueError, TypeError):
+                        pass
+        return super().to_internal_value(data)
+
+
+    def validate(self, attrs):
+        if not attrs.get("category"):
+            default_cat = EmergencyCategory.objects.filter(is_active=True).first()
+            if default_cat:
+                attrs["category"] = default_cat
+            else:
+                raise serializers.ValidationError({"category": "No active emergency category available."})
+        return attrs
+
     def validate_category(self, category):
-        if not category.is_active:
+        if category and not category.is_active:
             raise serializers.ValidationError(
                 "This emergency category is currently inactive and cannot be used."
             )
         return category
+
 
     def validate_message(self, value):
         if value and len(value) > 500:
@@ -180,3 +234,17 @@ class SOSStatusUpdateSerializer(serializers.Serializer):
         max_length=500,
         help_text="Optional note to accompany the status change.",
     )
+
+
+from .models import EscalationConfig, EscalationLog
+
+class EscalationConfigSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = EscalationConfig
+        fields = '__all__'
+
+
+class EscalationLogSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = EscalationLog
+        fields = '__all__'

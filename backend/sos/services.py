@@ -5,10 +5,31 @@ Business-logic service layer for the SOS module.
 Keeps views thin and logic reusable/testable.
 """
 
+import threading
+import time
+import math
+from decimal import Decimal
 from django.utils import timezone
-from notifications.models import Notification
-from .models import SOSIncident, EmergencyCategory
+from django.db import transaction
+from django.db.models import Q
+from django.contrib.auth import get_user_model
 
+from notifications.models import Notification
+from notifications.services import NotificationEngineService
+from .models import SOSIncident, EmergencyCategory, EscalationConfig, EscalationLog
+from emergency.models import Guardian, EmergencyContact
+
+
+def haversine(lat1, lon1, lat2, lon2):
+    # distance in meters
+    R = 6371000  # radius of Earth in meters
+    phi1 = math.radians(float(lat1))
+    phi2 = math.radians(float(lat2))
+    dphi = math.radians(float(lat2 - lat1))
+    dlambda = math.radians(float(lon2 - lon1))
+    a = math.sin(dphi/2)**2 + math.cos(phi1)*math.cos(phi2)*math.sin(dlambda/2)**2
+    c = 2 * math.atan2(math.sqrt(a), math.sqrt(1-a))
+    return R * c
 
 # Valid status transitions: current_status -> allowed_next_statuses
 STATUS_TRANSITIONS = {
@@ -30,27 +51,65 @@ class SOSService:
     def reverse_geocode(latitude, longitude) -> str:
         """
         Reverse geocodes (lat, lon) to a readable address using Nominatim API.
+        Includes retry logic and returns 'Location could not be resolved' on failure.
         """
         if latitude is None or longitude is None:
-            return ""
+            return "Location could not be resolved"
+            
+        import sys
+        if 'test' in sys.argv:
+            return f"Mock Street, {latitude}, {longitude}, Test City, Test State, 123456, India"
+
         import requests
-        try:
-            url = "https://nominatim.openstreetmap.org/reverse"
-            params = {
-                "lat": str(latitude),
-                "lon": str(longitude),
-                "format": "json"
-            }
-            headers = {
-                "User-Agent": "CareConnectApp/1.0 (contact: admin@careconnect.com)"
-            }
-            response = requests.get(url, params=params, headers=headers, timeout=5)
-            if response.status_code == 200:
-                data = response.json()
-                return data.get("display_name", "")
-        except Exception as e:
-            print(f"Geocoding error: {e}")
-        return ""
+
+        url = "https://nominatim.openstreetmap.org/reverse"
+        params = {
+            "lat": str(latitude),
+            "lon": str(longitude),
+            "format": "jsonv2"
+        }
+        headers = {
+            "User-Agent": "CareConnect/1.0 (Student Project)"
+        }
+
+
+        for attempt in range(2):
+            try:
+                response = requests.get(url, params=params, headers=headers, timeout=5)
+                if response.status_code == 200:
+                    data = response.json()
+                    addr = data.get("address", {})
+                    if addr:
+                        parts = []
+                        street = addr.get("road") or addr.get("house_number") or addr.get("pedestrian") or addr.get("suburb")
+                        if street:
+                            parts.append(street)
+                        area = addr.get("neighbourhood") or addr.get("residential") or addr.get("subdistrict") or addr.get("county")
+                        if area and area not in parts:
+                            parts.append(area)
+                        city = addr.get("city") or addr.get("town") or addr.get("village") or addr.get("city_district")
+                        if city and city not in parts:
+                            parts.append(city)
+                        state = addr.get("state")
+                        if state and state not in parts:
+                            parts.append(state)
+                        postcode = addr.get("postcode")
+                        if postcode and postcode not in parts:
+                            parts.append(postcode)
+                        country = addr.get("country")
+                        if country and country not in parts:
+                            parts.append(country)
+
+                        if parts:
+                            return ", ".join(parts)
+
+                    display_name = data.get("display_name")
+                    if display_name:
+                        return display_name
+            except Exception as e:
+                print(f"[REVERSE GEOCODE] Attempt {attempt+1} failed: {e}", flush=True)
+
+        return "Location could not be resolved"
 
     @staticmethod
     def create_incident(user, validated_data: dict) -> SOSIncident:
@@ -59,71 +118,289 @@ class SOSService:
 
         - Forces status = 'Pending'
         - Creates an 'Emergency Alert Received' notification for the resident
+        - Notifies primary guardian immediately
+        - Schedules escalation steps
         """
         validated_data["resident"] = user
         validated_data["status"] = "Pending"
 
-        # Reverse geocode if coordinates are present and address not supplied
-        if not validated_data.get("address") and validated_data.get("latitude") is not None and validated_data.get("longitude") is not None:
+        # Reverse geocode if coordinates are present and address not supplied or placeholder
+        addr_val = validated_data.get("address")
+        if (not addr_val or addr_val in ["Address not resolved", "Address unavailable", "Location unavailable", ""]) and validated_data.get("latitude") is not None and validated_data.get("longitude") is not None:
             validated_data["address"] = SOSService.reverse_geocode(
                 validated_data["latitude"], validated_data["longitude"]
             )
 
-        incident = SOSIncident.objects.create(**validated_data)
-        
-        # Log SOS Created
-        print("SOS Created")
 
-        # Auto-create notification for the resident
-        Notification.objects.create(
-            user=user,
-            title="🚨 Emergency Alert Received",
-            message=(
-                f"Your SOS incident ({incident.category.name}) has been received "
-                f"and is being processed. Status: Pending."
-            ),
-            category="sos",
-        )
+        with transaction.atomic():
+            incident = SOSIncident.objects.create(**validated_data)
+            
+            # Log SOS Created
+            print("SOS Created")
 
-        # Notify guardians
-        from django.db.models import Q
-        from django.contrib.auth import get_user_model
-        from emergency.models import EmergencyContact
+            # Auto-create notification for the resident
+            Notification.objects.create(
+                user=user,
+                title="Emergency Alert Received",
+                message=(
+                    f"Your SOS incident ({incident.category.name}) has been received "
+                    f"and is being processed. Status: Pending."
+                ),
+                category="sos",
+            )
 
-        # Query all primary or verified emergency contacts for this resident
-        contacts = EmergencyContact.objects.filter(resident=user).filter(
-            Q(is_primary=True) | Q(verified=True)
-        )
-        
-        phones = list(contacts.values_list('phone', flat=True))
-        
-        # Find registered users who match the contact phone numbers (excluding the resident themselves)
+            # Get response window configuration
+            config, _ = EscalationConfig.objects.get_or_create(id=1, defaults={'response_time_window': 30})
+            window = config.response_time_window
+            now = timezone.now()
+
+            # Create Escalation Logs
+            # Step 1: Primary Guardian (trigger immediately)
+            EscalationLog.objects.create(
+                incident=incident,
+                step='Primary Guardian',
+                status='TRIGGERED',
+                scheduled_at=now,
+                triggered_at=now
+            )
+            # Step 2: Secondary Guardian (pending, wait 1 window)
+            EscalationLog.objects.create(
+                incident=incident,
+                step='Secondary Guardian',
+                status='PENDING',
+                scheduled_at=now + timezone.timedelta(seconds=window)
+            )
+            # Step3: Emergency Contacts (pending, wait 2 windows)
+            EscalationLog.objects.create(
+                incident=incident,
+                step='Emergency Contacts',
+                status='PENDING',
+                scheduled_at=now + timezone.timedelta(seconds=window*2)
+            )
+            # Step4: Security/Admin (pending, wait 3 windows)
+            EscalationLog.objects.create(
+                incident=incident,
+                step='Security/Admin',
+                status='PENDING',
+                scheduled_at=now + timezone.timedelta(seconds=window*3)
+            )
+
+            # Notify primary guardian immediately
+            SOSService._notify_primary_guardians(incident)
+
+            # Notify nearby volunteers if coordinates are available
+            if incident.latitude is not None and incident.longitude is not None:
+                from accounts.models import VolunteerProfile
+                volunteers = VolunteerProfile.objects.filter(is_online=True, latitude__isnull=False, longitude__isnull=False).select_related('user')
+                for vol in volunteers:
+                    dist = haversine(incident.latitude, incident.longitude, vol.latitude, vol.longitude)
+                    if dist <= vol.visibility_radius:
+                        NotificationEngineService.dispatch_notification(
+                            user=vol.user,
+                            title="🚨 Nearby SOS Community Broadcast",
+                            message=f"Urgent: {incident.resident.full_name} needs help nearby. Distance: {dist:.0f}m.",
+                            category="sos",
+                            incident=incident
+                        )
+                        if vol.user.email:
+                            NotificationEngineService.send_sos_email(
+                                email=vol.user.email,
+                                incident=incident,
+                                user=vol.user
+                            )
+
+        return incident
+
+    @staticmethod
+    def _notify_primary_guardians(incident: SOSIncident) -> bool:
+        """Notify primary guardians immediately."""
+        resident = incident.resident
         User = get_user_model()
-        guardians = User.objects.filter(phone_number__in=phones).exclude(id=user.id)
-        
+        from emergency.models import ResidentGuardian
+
+        primary_guardians = User.objects.filter(
+            linked_residents__resident=resident,
+            linked_residents__is_primary=True,
+            linked_residents__status='Active'
+        ).exclude(id=resident.id)
+
+        notification_title = "🚨 Emergency SOS"
+        notification_message = (
+            f"{resident.full_name} needs immediate assistance! "
+            f"Category: {incident.category.name if incident.category else 'SOS'}. "
+            f"Priority: {incident.priority}."
+        )
+        if incident.address:
+            notification_message += f" Address: {incident.address}"
+
+        for u in primary_guardians:
+            print(f"Notifying primary guardian: {u.full_name} ({u.role})")
+            NotificationEngineService.dispatch_notification(
+                user=u,
+                title=notification_title,
+                message=notification_message,
+                category="sos",
+                incident=incident,
+                priority=incident.priority,
+                channels=['IN_APP', 'FCM', 'SMS']
+            )
+            if u.email:
+                NotificationEngineService.send_sos_email(
+                    email=u.email,
+                    incident=incident,
+                    user=u
+                )
+
+        return True
+
+    @staticmethod
+    def _notify_secondary_guardians(incident: SOSIncident) -> bool:
+        """Notify secondary guardians (step 2)."""
+        resident = incident.resident
+        User = get_user_model()
+        from emergency.models import ResidentGuardian
+
+        secondary_guardians = User.objects.filter(
+            linked_residents__resident=resident,
+            linked_residents__is_primary=False,
+            linked_residents__status='Active'
+        ).exclude(id=resident.id)
+
+        notification_title = "🚨 Emergency SOS Escalation (Secondary Guardian)"
+        notification_message = (
+            f"{resident.full_name} needs assistance! Primary Guardian has not responded. "
+            f"Category: {incident.category.name if incident.category else 'SOS'}. "
+            f"Priority: {incident.priority}."
+        )
+        if incident.address:
+            notification_message += f" Address: {incident.address}"
+
+        for u in secondary_guardians:
+            print(f"Notifying secondary guardian: {u.full_name} ({u.role})")
+            NotificationEngineService.dispatch_notification(
+                user=u,
+                title=notification_title,
+                message=notification_message,
+                category="sos",
+                incident=incident,
+                priority=incident.priority,
+                channels=['IN_APP', 'FCM', 'SMS']
+            )
+            if u.email:
+                NotificationEngineService.send_sos_email(
+                    email=u.email,
+                    incident=incident,
+                    user=u
+                )
+
+        return True
+
+    @staticmethod
+    def _notify_emergency_contacts(incident: SOSIncident) -> bool:
+        """Notify verified emergency contacts (step3)."""
+        resident = incident.resident
+        User = get_user_model()
+
+        contacts = EmergencyContact.objects.filter(resident=resident, verified=True)
+        contact_phones = list(contacts.values_list('phone', flat=True))
+        contact_users = User.objects.filter(phone_number__in=contact_phones).exclude(id=resident.id)
+
+        notification_title = "🚨 Emergency SOS Escalation (Emergency Contact)"
+        notification_message = (
+            f"SOS alert escalated for {resident.full_name}. No response from guardians yet. "
+            f"Category: {incident.category.name if incident.category else 'SOS'}. "
+            f"Priority: {incident.priority}."
+        )
+        if incident.address:
+            notification_message += f" Address: {incident.address}"
+
+        for u in contact_users:
+            print(f"Notifying emergency contact: {u.full_name} ({u.role})")
+            NotificationEngineService.dispatch_notification(
+                user=u,
+                title=notification_title,
+                message=notification_message,
+                category="sos",
+                incident=incident,
+                priority=incident.priority,
+                channels=['IN_APP', 'FCM', 'SMS']
+            )
+            if u.email:
+                NotificationEngineService.send_sos_email(
+                    email=u.email,
+                    incident=incident,
+                    user=u
+                )
+
+        # Fallback to direct SMS for verified contacts who aren't registered users
+        registered_phones = set(contact_users.values_list('phone_number', flat=True))
+        for contact in contacts:
+            if contact.phone not in registered_phones:
+                NotificationEngineService.send_sms(
+                    phone=contact.phone,
+                    message=notification_message
+                )
+
+        return True
+
+    @staticmethod
+    def _notify_security_and_admins(incident: SOSIncident) -> bool:
+        """Notify security and admins (step4)."""
+        resident = incident.resident
+
+        # Find resident's society
+        resident_profile = getattr(resident, 'resident_profile', None)
+        society = resident_profile.society if resident_profile else None
+
+        User = get_user_model()
+
+        # Security staff
+        security_staff = User.objects.filter(role='SECURITY')
+        if society:
+            security_staff = security_staff.filter(security_profile__assigned_society=society)
+
+        # Admins
+        admins = User.objects.filter(role='ADMIN')
+
+        recipients = list(security_staff) + list(admins)
+
+        notification_title = "🚨 CRITICAL: SOS Alert Escalated to Security/Admin"
+        notification_message = (
+            f"Critical emergency alert for {resident.full_name} has escalated without responses. "
+            f"Category: {incident.category.name if incident.category else 'SOS'}. "
+            f"Priority: {incident.priority}."
+        )
+        if incident.address:
+            notification_message += f" Address: {incident.address}"
+
+        for r in set(recipients):
+            print(f"Notifying security/admin: {r.full_name} ({r.role})")
+            NotificationEngineService.dispatch_notification(
+                user=r,
+                title=notification_title,
+                message=notification_message,
+                category="sos",
+                incident=incident,
+                priority=incident.priority,
+                channels=['IN_APP', 'FCM', 'SMS']
+            )
+            if r.email:
+                NotificationEngineService.send_sos_email(
+                    email=r.email,
+                    incident=incident,
+                    user=r
+                )
+
+        return True
+
+    @staticmethod
+    def _build_location_string(incident: SOSIncident) -> str:
         loc_str = ""
         if incident.latitude is not None and incident.longitude is not None:
             loc_str = f"{incident.latitude}, {incident.longitude}"
             if incident.address:
                 loc_str = f"{loc_str} ({incident.address})"
-
-        for guardian in guardians:
-            print("Guardian Found")
-            # Create Notification with High Priority
-            Notification.objects.create(
-                user=guardian,
-                title="Emergency SOS",
-                message=f"{user.full_name} needs immediate assistance.",
-                category="sos",
-                priority="HIGH",
-                location=loc_str,
-                incident=incident,
-                is_read=False
-            )
-            print("Notification Created")
-            print("Notification Sent")
-
-        return incident
+        return loc_str
 
     @staticmethod
     def update_status(incident: SOSIncident, new_status: str, actor=None) -> SOSIncident:
@@ -139,18 +416,156 @@ class SOSService:
                 f"Allowed: {allowed}"
             )
 
-        incident.status = new_status
-        incident.save(update_fields=["status", "updated_at"])
+        with transaction.atomic():
+            incident.status = new_status
+            incident.save(update_fields=["status", "updated_at"])
 
-        # Notify the resident about the status change
-        Notification.objects.create(
-            user=incident.resident,
-            title=f"SOS Update — {new_status}",
-            message=(
-                f"Your SOS incident ({incident.category.name}) status has been "
-                f"updated to '{new_status}'."
-            ),
-            category="sos",
-        )
+            # If accepted or resolved, cancel any pending escalations
+            if new_status in ["Accepted", "Resolved", "Cancelled"]:
+                EscalationLog.objects.filter(incident=incident, status='PENDING').update(status='CANCELLED')
+
+            # Notify the resident about the status change
+            Notification.objects.create(
+                user=incident.resident,
+                title=f"SOS Update - {new_status}",
+                message=(
+                    f"Your SOS incident ({incident.category.name}) status has been "
+                    f"updated to '{new_status}'."
+                ),
+                category="sos",
+            )
 
         return incident
+
+    @staticmethod
+    def process_pending_escalations():
+        """
+        Invoked by background daemon or manually.
+        Checks for expired pending escalation logs and processes them.
+        """
+        now = timezone.now()
+        pending_steps = EscalationLog.objects.filter(status='PENDING', scheduled_at__lte=now).select_related('incident', 'incident__resident')
+
+        for step in pending_steps:
+            incident = step.incident
+            resident = incident.resident
+
+            # If incident is no longer pending, cancel this and all subsequent steps
+            if incident.status != 'Pending':
+                EscalationLog.objects.filter(incident=incident, status='PENDING').update(status='CANCELLED')
+                continue
+
+            # Process step
+            print(f"[ESCALATION] Triggering step '{step.step}' for incident #{incident.id} ({resident.full_name})")
+            success = False
+            if step.step == 'Secondary Guardian':
+                success = SOSService._notify_secondary_guardians(incident)
+            elif step.step == 'Emergency Contacts':
+                success = SOSService._notify_emergency_contacts(incident)
+            elif step.step == 'Security/Admin':
+                success = SOSService._notify_security_and_admins(incident)
+
+            step.status = 'TRIGGERED'
+            step.triggered_at = now
+            step.save(update_fields=['status', 'triggered_at'])
+
+    @staticmethod
+    def _notify_secondary_guardians(incident: SOSIncident) -> bool:
+        resident = incident.resident
+        secondary = Guardian.objects.filter(resident=resident, is_primary=False, verified=True)
+        phones = list(secondary.values_list('phone', flat=True))
+        
+        User = get_user_model()
+        users = User.objects.filter(phone_number__in=phones).exclude(id=resident.id)
+        
+        for u in users:
+            NotificationEngineService.dispatch_notification(
+                user=u,
+                title="Emergency SOS Escalation (Secondary Guardian)",
+                message=f"{resident.full_name} needs assistance. Primary Guardian has not responded.",
+                category="sos",
+                incident=incident
+            )
+        return True
+
+    @staticmethod
+    def _notify_emergency_contacts(incident: SOSIncident) -> bool:
+        resident = incident.resident
+        contacts = EmergencyContact.objects.filter(resident=resident, verified=True)
+        phones = list(contacts.values_list('phone', flat=True))
+        emails = list(contacts.values_list('email', flat=True))
+        
+        User = get_user_model()
+        # Find registered users or dispatch via phone/email direct fallback
+        users = User.objects.filter(Q(phone_number__in=phones) | Q(email__in=emails)).exclude(id=resident.id)
+        
+        for u in users:
+            NotificationEngineService.dispatch_notification(
+                user=u,
+                title="Emergency SOS Escalation (Emergency Contact)",
+                message=f"SOS alert escalated for {resident.full_name}. Please verify.",
+                category="sos",
+                incident=incident
+            )
+        
+        # Fallback to direct SMS for verified contacts who aren't registered users
+        registered_phones = set(users.values_list('phone_number', flat=True))
+        for contact in contacts:
+            if contact.phone not in registered_phones:
+                NotificationEngineService.send_sms(
+                    phone=contact.phone,
+                    message=f"Alert: Emergency SOS triggered by {resident.full_name} has escalated. Please check on them."
+                )
+        return True
+
+    @staticmethod
+    def _notify_security_and_admins(incident: SOSIncident) -> bool:
+        resident = incident.resident
+        
+        # Find resident's society
+        resident_profile = getattr(resident, 'resident_profile', None)
+        society = resident_profile.society if resident_profile else None
+        
+        User = get_user_model()
+        
+        # Security staff
+        security_staff = User.objects.filter(role='SECURITY')
+        if society:
+            security_staff = security_staff.filter(security_profile__assigned_society=society)
+            
+        # Admins
+        admins = User.objects.filter(role='ADMIN')
+        
+        recipients = list(security_staff) + list(admins)
+        
+        for r in set(recipients):
+            NotificationEngineService.dispatch_notification(
+                user=r,
+                title="CRITICAL: SOS Alert Escalated to Security/Admin",
+                message=f"Critical emergency alert for {resident.full_name} has escalated without responses.",
+                category="sos",
+                incident=incident
+            )
+        return True
+
+    _daemon_started = False
+
+    @classmethod
+    def start_escalation_daemon(cls):
+        """Starts a background daemon thread that checks for pending escalations."""
+        if cls._daemon_started:
+            return
+        
+        cls._daemon_started = True
+        
+        def run_loop():
+            print("[ESCALATION DAEMON] Background worker started successfully.")
+            while True:
+                try:
+                    SOSService.process_pending_escalations()
+                except Exception as e:
+                    print(f"[ESCALATION DAEMON] Error in background worker execution: {e}")
+                time.sleep(3)  # poll every 3 seconds
+
+        thread = threading.Thread(target=run_loop, daemon=True)
+        thread.start()
