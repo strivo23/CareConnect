@@ -30,7 +30,6 @@ import { dashboardService, sosService } from '../services/api';
 const Dashboard = () => {
   const [incidentStats, setIncidentStats] = useState(null);
   const [incidents, setIncidents] = useState([]);
-  const [loading, setLoading] = useState(true);
   const [incidentLoading, setIncidentLoading] = useState(true);
   const [filters, setFilters] = useState({
     status: '',
