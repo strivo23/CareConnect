@@ -13,7 +13,7 @@ import 'package:careconnect_mobile/main.dart';
 void main() {
   testWidgets('app boots', (WidgetTester tester) async {
     await tester.pumpWidget(const CareConnectBootstrap());
-    await tester.pump();
+    await tester.pump(const Duration(seconds: 2));
 
     expect(find.byType(MaterialApp), findsOneWidget);
   });
