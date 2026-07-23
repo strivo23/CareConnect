@@ -218,11 +218,21 @@ class SOSService:
         User = get_user_model()
         from emergency.models import ResidentGuardian
 
-        primary_guardians = User.objects.filter(
+        primary_user_ids = set(User.objects.filter(
             linked_residents__resident=resident,
             linked_residents__is_primary=True,
             linked_residents__status='Active'
-        ).exclude(id=resident.id)
+        ).exclude(id=resident.id).values_list('id', flat=True))
+
+        contact_phones = list(EmergencyContact.objects.filter(resident=resident, is_primary=True).values_list('phone', flat=True))
+        guardian_phones = list(Guardian.objects.filter(resident=resident, is_primary=True).values_list('phone', flat=True))
+        all_primary_phones = set(contact_phones + guardian_phones)
+
+        if all_primary_phones:
+            matched_ids = User.objects.filter(phone_number__in=all_primary_phones).exclude(id=resident.id).values_list('id', flat=True)
+            primary_user_ids.update(matched_ids)
+
+        primary_guardians = User.objects.filter(id__in=primary_user_ids)
 
         notification_title = "🚨 Emergency SOS"
         notification_message = (

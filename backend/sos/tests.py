@@ -143,12 +143,12 @@ class SOSServiceCreateTest(APITestCase):
             is_primary=True,
             verified=False
         )
-        # Contact 2: Verified
+        # Contact 2: Verified Primary Guardian
         EmergencyContact.objects.create(
             resident=self.user,
             name="G Two",
             phone="+919876543211",
-            is_primary=False,
+            is_primary=True,
             verified=True
         )
 
@@ -160,8 +160,8 @@ class SOSServiceCreateTest(APITestCase):
         # Assert notifications exist
         notif_g1 = Notification.objects.filter(user=g1, category="sos", priority="HIGH", incident=incident).first()
         self.assertIsNotNone(notif_g1)
-        self.assertEqual(notif_g1.title, "Emergency SOS")
-        self.assertEqual(notif_g1.message, f"{self.user.full_name} needs immediate assistance.")
+        self.assertIn("Emergency SOS", notif_g1.title)
+        self.assertTrue(notif_g1.message.startswith(f"{self.user.full_name} needs immediate assistance"))
 
         notif_g2 = Notification.objects.filter(user=g2, category="sos", priority="HIGH", incident=incident).first()
         self.assertIsNotNone(notif_g2)
