@@ -23,3 +23,6 @@ build/
 
 # Windows
 Thumbs.db
+
+# Firebase
+flutter_mobile/android/app/google-services.json
