@@ -84,8 +84,22 @@ class AppRouter {
         GoRoute(
           path: '/sos-detail',
           builder: (context, state) {
-            final notification = state.extra as AppNotificationModel;
-            return SOSDetailScreen(notification: notification);
+            final extra = state.extra;
+            if (extra is AppNotificationModel) {
+              return SOSDetailScreen(notification: extra);
+            } else if (extra is Map<String, dynamic>) {
+              return SOSDetailScreen(notification: AppNotificationModel.fromJson(extra));
+            }
+            return SOSDetailScreen(
+              notification: AppNotificationModel(
+                id: '0',
+                title: 'SOS Alert',
+                message: 'SOS Details',
+                category: 'sos',
+                isRead: false,
+                createdAt: DateTime.now(),
+              ),
+            );
           },
         ),
         GoRoute(

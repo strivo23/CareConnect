@@ -196,7 +196,7 @@ class PushNotificationService {
       );
 
       await _localNotifications.initialize(
-        initSettings,
+        settings: initSettings,
         onDidReceiveNotificationResponse: (NotificationResponse response) {
           if (response.payload != null) {
             try {
@@ -270,10 +270,10 @@ class PushNotificationService {
         const NotificationDetails notificationDetails = NotificationDetails(android: androidDetails);
 
         await _localNotifications.show(
-          notification.hashCode,
-          notification.title,
-          notification.body,
-          notificationDetails,
+          id: notification.hashCode,
+          title: notification.title,
+          body: notification.body,
+          notificationDetails: notificationDetails,
           payload: jsonEncode(message.data),
         );
       }
@@ -281,6 +281,7 @@ class PushNotificationService {
       debugPrint('[PushNotificationService] Error showing local notification: $e');
     }
   }
+
 
   void _handleNotificationTap(Map<String, dynamic> data) {
     debugPrint('[PushNotificationService] Handling notification tap: $data');

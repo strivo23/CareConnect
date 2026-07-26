@@ -6,9 +6,7 @@ class AppConstants {
       ? 'http://localhost:8000'
       : String.fromEnvironment(
           'API_BASE_URL',
-          // For Android Emulator: 10.0.2.2 (alias to host PC)
-          // For real device on same Wi-Fi: use your PC's LAN IP below
-          defaultValue: 'http://192.168.1.36:8000',
+          defaultValue: 'http://10.0.2.2:8000',
         );
 
   static const apiTokenKey = 'careconnect_access_token';

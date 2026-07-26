@@ -4,6 +4,7 @@ import Layout from './layouts/Layout';
 
 // Pages
 import Login from './pages/Login';
+import CreateSuperuser from './pages/CreateSuperuser';
 import Dashboard from './pages/Dashboard';
 import Society from './pages/Society';
 import Block from './pages/Block';
@@ -22,6 +23,7 @@ const App = () => {
     <BrowserRouter>
       <Routes>
         <Route path="/login" element={<Login />} />
+        <Route path="/create-superuser" element={<CreateSuperuser />} />
         
         {/* Protected Routes wrapped in Layout */}
         <Route path="/" element={<Layout />}>

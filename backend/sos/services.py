@@ -16,8 +16,19 @@ from django.contrib.auth import get_user_model
 
 from notifications.models import Notification
 from notifications.services import NotificationEngineService
+from notifications.notification_service import (
+    notify_guardians,
+    notify_security,
+    notify_volunteers,
+    send_email,
+    send_push,
+    SMSService,
+)
+from notifications.dispatcher import NotificationDispatcher
 from .models import SOSIncident, EmergencyCategory, EscalationConfig, EscalationLog
 from emergency.models import Guardian, EmergencyContact
+
+
 
 
 def haversine(lat1, lon1, lat2, lon2):
@@ -150,46 +161,97 @@ class SOSService:
             )
 
             # Get response window configuration
-            config, _ = EscalationConfig.objects.get_or_create(id=1, defaults={'response_time_window': 30})
-            window = config.response_time_window
-            now = timezone.now()
+            config, _ = EscalationConfig.objects.get_or_create(
+                id=1,
+                defaults={
+                    'response_time_minutes': 5,
+                    'response_time_window': 30,
+                    'escalation_enabled': True,
+                    'notify_security': True,
+                    'notify_volunteers': True,
+                    'notify_admin': True,
+                }
+            )
+            
+            if config.escalation_enabled:
+                window = config.response_time_window if config.response_time_window else (config.response_time_minutes * 60)
+                now = timezone.now()
 
-            # Create Escalation Logs
-            # Step 1: Primary Guardian (trigger immediately)
-            EscalationLog.objects.create(
-                incident=incident,
-                step='Primary Guardian',
-                status='TRIGGERED',
-                scheduled_at=now,
-                triggered_at=now
-            )
-            # Step 2: Secondary Guardian (pending, wait 1 window)
-            EscalationLog.objects.create(
-                incident=incident,
-                step='Secondary Guardian',
-                status='PENDING',
-                scheduled_at=now + timezone.timedelta(seconds=window)
-            )
-            # Step3: Emergency Contacts (pending, wait 2 windows)
-            EscalationLog.objects.create(
-                incident=incident,
-                step='Emergency Contacts',
-                status='PENDING',
-                scheduled_at=now + timezone.timedelta(seconds=window*2)
-            )
-            # Step4: Security/Admin (pending, wait 3 windows)
-            EscalationLog.objects.create(
-                incident=incident,
-                step='Security/Admin',
-                status='PENDING',
-                scheduled_at=now + timezone.timedelta(seconds=window*3)
-            )
+                # Create Escalation Logs
+                # Step 1: Primary Guardian (trigger immediately)
+                EscalationLog.objects.create(
+                    incident=incident,
+                    step='Primary Guardian',
+                    escalation_level='Primary Guardian',
+                    new_recipient='Primary Guardian',
+                    status='TRIGGERED',
+                    scheduled_at=now,
+                    triggered_at=now
+                )
+                # Step 2: Secondary Guardian (pending, wait 1 window)
+                EscalationLog.objects.create(
+                    incident=incident,
+                    step='Secondary Guardian',
+                    escalation_level='Secondary Guardian',
+                    previous_recipient='Primary Guardian',
+                    new_recipient='Secondary Guardian',
+                    status='PENDING',
+                    scheduled_at=now + timezone.timedelta(seconds=window)
+                )
+                # Step 3: Emergency Contacts (pending, wait 2 windows)
+                EscalationLog.objects.create(
+                    incident=incident,
+                    step='Emergency Contacts',
+                    escalation_level='Emergency Contacts',
+                    previous_recipient='Secondary Guardian',
+                    new_recipient='Emergency Contacts',
+                    status='PENDING',
+                    scheduled_at=now + timezone.timedelta(seconds=window * 2)
+                )
+                
+                step_offset = 3
+                if config.notify_security:
+                    EscalationLog.objects.create(
+                        incident=incident,
+                        step='Security',
+                        escalation_level='Security',
+                        previous_recipient='Emergency Contacts',
+                        new_recipient='Security Staff',
+                        status='PENDING',
+                        scheduled_at=now + timezone.timedelta(seconds=window * step_offset)
+                    )
+                    step_offset += 1
 
-            # Notify primary guardian immediately
+                if config.notify_volunteers:
+                    EscalationLog.objects.create(
+                        incident=incident,
+                        step='Volunteers',
+                        escalation_level='Volunteers',
+                        previous_recipient='Security',
+                        new_recipient='Community Volunteers',
+                        status='PENDING',
+                        scheduled_at=now + timezone.timedelta(seconds=window * step_offset)
+                    )
+                    step_offset += 1
+
+                if config.notify_admin:
+                    EscalationLog.objects.create(
+                        incident=incident,
+                        step='Admin',
+                        escalation_level='Admin',
+                        previous_recipient='Volunteers',
+                        new_recipient='System Admin',
+                        status='PENDING',
+                        scheduled_at=now + timezone.timedelta(seconds=window * step_offset)
+                    )
+
+            # Dispatch via central NotificationDispatcher
+            NotificationDispatcher.dispatch_sos_created(incident)
             SOSService._notify_primary_guardians(incident)
+            notify_guardians(incident)
 
             # Notify nearby volunteers if coordinates are available
-            if incident.latitude is not None and incident.longitude is not None:
+            if incident.latitude is not None and incident.longitude is not None and config.notify_volunteers:
                 from accounts.models import VolunteerProfile
                 volunteers = VolunteerProfile.objects.filter(is_online=True, latitude__isnull=False, longitude__isnull=False).select_related('user')
                 for vol in volunteers:
@@ -445,6 +507,68 @@ class SOSService:
                 category="sos",
             )
 
+        return incident
+
+    @staticmethod
+    def accept_incident(incident: SOSIncident, actor=None) -> SOSIncident:
+        """
+        Accept an SOS incident, stopping all auto-escalation.
+        """
+        with transaction.atomic():
+            updated = SOSService.update_status(incident, "Accepted", actor=actor)
+            
+            actor_name = getattr(actor, 'full_name', str(actor)) if actor else 'Assignee'
+            EscalationLog.objects.create(
+                incident=incident,
+                step='Accepted',
+                escalation_level='Accepted',
+                previous_recipient=actor_name,
+                new_recipient=actor_name,
+                reason='SOS accepted by guardian/responder',
+                status='ACCEPTED',
+                response_status='Accepted',
+                scheduled_at=timezone.now(),
+                triggered_at=timezone.now()
+            )
+            
+            # Cancel all remaining pending escalations
+            EscalationLog.objects.filter(incident=incident, status='PENDING').update(
+                status='CANCELLED',
+                response_status='Cancelled due to acceptance'
+            )
+            
+        return updated
+
+    @staticmethod
+    def reject_incident(incident: SOSIncident, actor=None, reason: str = "") -> SOSIncident:
+        """
+        Reject an SOS incident, recording rejection and immediately triggering the next escalation step.
+        """
+        now = timezone.now()
+        with transaction.atomic():
+            actor_name = getattr(actor, 'full_name', str(actor)) if actor else 'Guardian'
+            
+            EscalationLog.objects.create(
+                incident=incident,
+                step='Rejected',
+                escalation_level='Rejected',
+                previous_recipient=actor_name,
+                new_recipient='Escalated',
+                reason=reason or 'SOS rejected by primary/secondary guardian',
+                status='REJECTED',
+                response_status='Rejected',
+                scheduled_at=now,
+                triggered_at=now
+            )
+
+            # Trigger immediate escalation by advancing next pending log to scheduled_at = now
+            next_step = EscalationLog.objects.filter(incident=incident, status='PENDING').order_by('scheduled_at').first()
+            if next_step:
+                next_step.scheduled_at = now
+                next_step.save(update_fields=['scheduled_at'])
+
+        # Immediately run pending escalations process
+        SOSService.process_pending_escalations()
         return incident
 
     @staticmethod

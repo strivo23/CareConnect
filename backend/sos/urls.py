@@ -31,7 +31,11 @@ from .views import (
     SOSEmergencyMessageCreateView,
     SOSEmergencyMessageListView,
     EscalationConfigViewSet,
+    EscalationConfigAPIView,
     EscalationLogViewSet,
+    IncidentEscalationDetailView,
+    SOSAcceptAPIView,
+    SOSRejectAPIView,
     CommunityBroadcastAPIView,
     IncidentTrackingStatsAPIView,
 )
@@ -45,6 +49,9 @@ urlpatterns = [
     path("incidents/<int:pk>/", SOSIncidentDetailView.as_view(), name="sos-incident-detail"),
     path("incidents/tracking-stats/", IncidentTrackingStatsAPIView.as_view(), name="sos-incident-stats"),
     path("incidents/<int:pk>/broadcast/", CommunityBroadcastAPIView.as_view(), name="sos-incident-broadcast"),
+    path("incidents/<int:pk>/escalation/", IncidentEscalationDetailView.as_view(), name="sos-incident-escalation"),
+    path("incidents/<int:pk>/accept/", SOSAcceptAPIView.as_view(), name="sos-incident-accept-post"),
+    path("incidents/<int:pk>/reject/", SOSRejectAPIView.as_view(), name="sos-incident-reject"),
 
     # ── My History ──────────────────────────────────────────────────────────
     path("history/", SOSHistoryView.as_view(), name="sos-history"),
@@ -66,6 +73,8 @@ urlpatterns = [
     # ── Escalation Settings & Logs ───────────────────────────────────────────
     path("escalation-config/", EscalationConfigViewSet.as_view({'get': 'list', 'post': 'create'}), name="escalation-config-list"),
     path("escalation-config/<int:pk>/", EscalationConfigViewSet.as_view({'get': 'retrieve', 'put': 'update', 'patch': 'partial_update', 'delete': 'destroy'}), name="escalation-config-detail"),
+    path("escalation/config", EscalationConfigAPIView.as_view(), name="escalation-config-api"),
+    path("escalation/logs", EscalationLogViewSet.as_view({'get': 'list'}), name="escalation-logs-api"),
     path("escalation-logs/", EscalationLogViewSet.as_view({'get': 'list'}), name="escalation-logs-list"),
     path("escalation-logs/<int:pk>/", EscalationLogViewSet.as_view({'get': 'retrieve'}), name="escalation-logs-detail"),
 ]

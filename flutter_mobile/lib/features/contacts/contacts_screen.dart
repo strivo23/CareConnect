@@ -7,6 +7,8 @@ import '../../core/theme/app_theme.dart';
 import '../../services/contacts_repository.dart';
 import '../../models/contact_model.dart';
 import '../../providers/auth_provider.dart';
+import '../../core/services/api_client.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 // Local data model for Emergency Contacts
 class LocalContact {
@@ -954,7 +956,42 @@ class _ContactsScreenState extends State<ContactsScreen> with SingleTickerProvid
     );
   }
 
-  // Trusted Emergency Services Grid Builder
+  Future<void> _triggerEmergencyService(String name, String number, Color color) async {
+    // 1. Post to backend emergency alerts API
+    try {
+      await ApiClient.instance.post(
+        '/api/emergency/alerts/',
+        data: {
+          'category': name.toLowerCase(),
+          'message': '$name assistance requested from Trusted Emergency Services screen',
+        },
+      );
+    } catch (e) {
+      debugPrint('Error logging emergency service alert: $e');
+    }
+
+    // 2. Launch real phone dialer
+    final telNumber = number == 'Emergency' ? '112' : number;
+    final Uri uri = Uri.parse('tel:$telNumber');
+    try {
+      if (await canLaunchUrl(uri)) {
+        await launchUrl(uri);
+      }
+    } catch (e) {
+      debugPrint('Phone dialer launch info: $e');
+    }
+
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Dispatched $name ($telNumber) emergency request.'),
+          behavior: SnackBarBehavior.floating,
+          backgroundColor: color,
+          duration: const Duration(seconds: 3),
+        ),
+      );
+    }
+  }
 
   Widget _buildEmergencyServicesGrid() {
     final List<Map<String, dynamic>> services = [
@@ -978,85 +1015,82 @@ class _ContactsScreenState extends State<ContactsScreen> with SingleTickerProvid
       itemBuilder: (context, index) {
         final svc = services[index];
         final serviceColor = svc['color'] as Color;
-        return Container(
-          decoration: BoxDecoration(
-            color: Theme.of(context).colorScheme.surface,
-            borderRadius: BorderRadius.circular(20),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withValues(alpha: 0.02),
-                blurRadius: 12,
-                offset: const Offset(0, 4),
-              ),
-            ],
-            border: Border.all(color: isDark ? Colors.white10 : Colors.grey.shade100),
-          ),
-          padding: const EdgeInsets.all(14),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text(
-                    svc['emoji'] as String,
-                    style: const TextStyle(fontSize: 22),
-                  ),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                    decoration: BoxDecoration(
-                      color: serviceColor.withValues(alpha: 0.1),
-                      borderRadius: BorderRadius.circular(8),
+        final name = svc['name'] as String;
+        final number = svc['number'] as String;
+
+        return InkWell(
+          onTap: () => _triggerEmergencyService(name, number, serviceColor),
+          borderRadius: BorderRadius.circular(20),
+          child: Container(
+            decoration: BoxDecoration(
+              color: Theme.of(context).colorScheme.surface,
+              borderRadius: BorderRadius.circular(20),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.02),
+                  blurRadius: 12,
+                  offset: const Offset(0, 4),
+                ),
+              ],
+              border: Border.all(color: isDark ? Colors.white10 : Colors.grey.shade100),
+            ),
+            padding: const EdgeInsets.all(14),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(
+                      svc['emoji'] as String,
+                      style: const TextStyle(fontSize: 22),
                     ),
-                    child: Text(
-                      svc['number'] as String,
-                      style: GoogleFonts.outfit(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w900,
-                        color: serviceColor,
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                      decoration: BoxDecoration(
+                        color: serviceColor.withValues(alpha: 0.1),
+                        borderRadius: BorderRadius.circular(8),
                       ),
-                    ),
-                  ),
-                ],
-              ),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Expanded(
-                    child: Text(
-                      svc['name'] as String,
-                      style: GoogleFonts.outfit(
-                        fontWeight: FontWeight.bold,
-                        fontSize: 14,
-                        color: Theme.of(context).colorScheme.onSurface,
-                      ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ),
-                  IconButton(
-                    onPressed: () {
-                      debugPrint('Emergency Services trigger call: ${svc['name']} at ${svc['number']}');
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(
-                          content: Text('Calling ${svc['name']} (${svc['number']})... (Simulated)'),
-                          behavior: SnackBarBehavior.floating,
-                          backgroundColor: serviceColor,
-                          duration: const Duration(seconds: 2),
+                      child: Text(
+                        number,
+                        style: GoogleFonts.outfit(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w900,
+                          color: serviceColor,
                         ),
-                      );
-                    },
-                    icon: const Icon(Icons.call_rounded, color: Colors.white, size: 14),
-                    style: IconButton.styleFrom(
-                      backgroundColor: serviceColor,
-                      padding: const EdgeInsets.all(6),
-                      minimumSize: const Size(28, 28),
+                      ),
                     ),
-                  )
-                ],
-              )
-            ],
+                  ],
+                ),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Expanded(
+                      child: Text(
+                        name,
+                        style: GoogleFonts.outfit(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 14,
+                          color: Theme.of(context).colorScheme.onSurface,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    IconButton(
+                      onPressed: () => _triggerEmergencyService(name, number, serviceColor),
+                      icon: const Icon(Icons.call_rounded, color: Colors.white, size: 14),
+                      style: IconButton.styleFrom(
+                        backgroundColor: serviceColor,
+                        padding: const EdgeInsets.all(6),
+                        minimumSize: const Size(28, 28),
+                      ),
+                    )
+                  ],
+                )
+              ],
+            ),
           ),
         );
       },

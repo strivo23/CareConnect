@@ -24,6 +24,7 @@ from decimal import Decimal
 from rest_framework import generics, permissions, filters, status
 from rest_framework.response import Response
 from rest_framework.views import APIView
+from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
 from django_filters.rest_framework import DjangoFilterBackend
 from drf_spectacular.utils import extend_schema, OpenApiParameter
 
@@ -35,7 +36,9 @@ from .serializers import (
     SOSStatusUpdateSerializer,
     SOSIncidentUpdateSerializer,
     SOSEmergencyMessageSerializer,
+    SOSIncidentMessageUploadSerializer,
 )
+
 from .filters import SOSIncidentFilter
 from .permissions import (
     CanViewSOS,
@@ -340,30 +343,67 @@ class SOSIncidentUpdateView(generics.UpdateAPIView):
         serializer.save()
 
 
-@extend_schema(tags=["SOS — Messages"], request=SOSEmergencyMessageSerializer, responses={201: SOSEmergencyMessageSerializer})
-class SOSEmergencyMessageCreateView(generics.CreateAPIView):
+@extend_schema(
+    tags=["SOS — Messages"],
+    request=SOSIncidentMessageUploadSerializer,
+    responses={200: SOSIncidentSerializer}
+)
+class SOSEmergencyMessageCreateView(APIView):
     """
     POST /api/sos/{id}/message/
-    Allow resident to attach an additional emergency text message.
+    Attach emergency text description and/or voice recording to an SOS incident.
+    Accepts multipart/form-data, saves audio in MEDIA_ROOT, updates emergency_description,
+    and returns the updated incident.
     """
-    serializer_class = SOSEmergencyMessageSerializer
     permission_classes = [permissions.IsAuthenticated]
+    parser_classes = (MultiPartParser, FormParser, JSONParser)
 
-    def perform_create(self, serializer):
-        incident_pk = self.kwargs.get("pk")
+    def post(self, request, pk):
         try:
-            incident = SOSIncident.objects.get(pk=incident_pk)
+            incident = SOSIncident.objects.get(pk=pk)
         except SOSIncident.DoesNotExist:
-            raise permissions.exceptions.ValidationError("SOS incident not found.")
-
-        # Check access permission
-        user = self.request.user
-        if user.role == "RESIDENT" and incident.resident != user:
-            raise permissions.exceptions.PermissionDenied(
-                "You do not have permission to attach a message to this incident."
+            return Response(
+                {"detail": "SOS incident not found."},
+                status=status.HTTP_404_NOT_FOUND
             )
 
-        serializer.save(incident=incident, sender=user)
+        # Check access permission: residents can only add message to their own incident
+        user = request.user
+        if user.role == "RESIDENT" and incident.resident != user:
+            return Response(
+                {"detail": "You do not have permission to modify this incident."},
+                status=status.HTTP_403_FORBIDDEN
+            )
+
+        serializer = SOSIncidentMessageUploadSerializer(data=request.data)
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+        validated_data = serializer.validated_data
+
+        if "emergency_description" in validated_data:
+            incident.emergency_description = validated_data["emergency_description"]
+            if validated_data["emergency_description"].strip():
+                incident.message = validated_data["emergency_description"]
+
+        if "voice_message" in validated_data and validated_data["voice_message"]:
+            incident.voice_message = validated_data["voice_message"]
+
+        incident.save()
+
+        # Also log message in SOSEmergencyMessage table if description provided
+        if incident.emergency_description.strip():
+            SOSEmergencyMessage.objects.create(
+                incident=incident,
+                sender=user,
+                message=incident.emergency_description
+            )
+
+        return Response(
+            SOSIncidentSerializer(incident, context={"request": request}).data,
+            status=status.HTTP_200_OK
+        )
+
 
 
 @extend_schema(tags=["SOS — Messages"], responses={200: SOSEmergencyMessageSerializer(many=True)})
@@ -457,11 +497,135 @@ class EscalationConfigViewSet(viewsets.ModelViewSet):
     serializer_class = EscalationConfigSerializer
     permission_classes = [permissions.IsAuthenticated]
 
+    def get_queryset(self):
+        # Ensure a default config exists
+        if not EscalationConfig.objects.exists():
+            EscalationConfig.objects.create(
+                id=1,
+                response_time_minutes=5,
+                response_time_window=30,
+                escalation_enabled=True,
+                notify_security=True,
+                notify_volunteers=True,
+                notify_admin=True
+            )
+        return EscalationConfig.objects.all()
+
+
+class EscalationConfigAPIView(APIView):
+    """
+    GET  /escalation/config
+    PUT  /escalation/config
+    Single active configuration view.
+    """
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        config, _ = EscalationConfig.objects.get_or_create(
+            id=1,
+            defaults={
+                'response_time_minutes': 5,
+                'response_time_window': 30,
+                'escalation_enabled': True,
+                'notify_security': True,
+                'notify_volunteers': True,
+                'notify_admin': True,
+            }
+        )
+        serializer = EscalationConfigSerializer(config)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+    def put(self, request):
+        config, _ = EscalationConfig.objects.get_or_create(id=1)
+        serializer = EscalationConfigSerializer(config, data=request.data, partial=True)
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
 
 class EscalationLogViewSet(viewsets.ReadOnlyModelViewSet):
     queryset = EscalationLog.objects.all().order_by('-created_at')
     serializer_class = EscalationLogSerializer
     permission_classes = [permissions.IsAuthenticated]
+
+
+class IncidentEscalationDetailView(APIView):
+    """
+    GET /incident/{id}/escalation
+    Retrieve escalation tracking and logs for a specific SOS incident.
+    """
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request, pk):
+        try:
+            incident = SOSIncident.objects.select_related('resident', 'category').get(pk=pk)
+        except SOSIncident.DoesNotExist:
+            return Response({"detail": "Incident not found."}, status=status.HTTP_404_NOT_FOUND)
+
+        logs = EscalationLog.objects.filter(incident=incident).order_by('scheduled_at')
+        logs_data = EscalationLogSerializer(logs, many=True).data
+
+        current_log = logs.filter(status='TRIGGERED').last() or logs.first()
+        current_level = current_log.step if current_log else 'Primary Guardian'
+        current_assignee = current_log.new_recipient if current_log else 'Primary Guardian'
+
+        return Response({
+            "incident_id": incident.id,
+            "resident_name": incident.resident.full_name,
+            "status": incident.status,
+            "current_escalation_level": current_level,
+            "current_assignee": current_assignee,
+            "escalation_history": logs_data,
+        }, status=status.HTTP_200_OK)
+
+
+class SOSAcceptAPIView(APIView):
+    """
+    POST /incident/{id}/accept
+    Accept an SOS incident, stopping escalation.
+    """
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request, pk):
+        try:
+            incident = SOSIncident.objects.select_related('resident', 'category').get(pk=pk)
+        except SOSIncident.DoesNotExist:
+            return Response({"detail": "SOS incident not found."}, status=status.HTTP_404_NOT_FOUND)
+
+        if incident.status not in ["Pending", "Accepted"]:
+            return Response(
+                {"detail": f"Cannot accept incident in status '{incident.status}'."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        updated = SOSService.accept_incident(incident, actor=request.user)
+        return Response(
+            SOSIncidentSerializer(updated, context={"request": request}).data,
+            status=status.HTTP_200_OK
+        )
+
+
+class SOSRejectAPIView(APIView):
+    """
+    POST /incident/{id}/reject
+    Reject an SOS incident, recording rejection and triggering immediate escalation to the next step.
+    """
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request, pk):
+        try:
+            incident = SOSIncident.objects.select_related('resident', 'category').get(pk=pk)
+        except SOSIncident.DoesNotExist:
+            return Response({"detail": "SOS incident not found."}, status=status.HTTP_404_NOT_FOUND)
+
+        reason = request.data.get("reason", "")
+        updated = SOSService.reject_incident(incident, actor=request.user, reason=reason)
+        
+        return Response({
+            "detail": "SOS alert rejected. Escalated to next level immediately.",
+            "incident": SOSIncidentSerializer(updated, context={"request": request}).data
+        }, status=status.HTTP_200_OK)
+
 
 
 class CommunityBroadcastAPIView(APIView):
@@ -501,7 +665,7 @@ class CommunityBroadcastAPIView(APIView):
 
 
 class IncidentTrackingStatsAPIView(APIView):
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = []
 
     def get(self, request):
         from notifications.models import NotificationLog

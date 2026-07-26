@@ -9,11 +9,14 @@ const Login = () => {
   const [email, setEmail] = useState('admin@careconnect.com');
   const [password, setPassword] = useState('password123');
   const [error, setError] = useState('');
+  const [successMsg, setSuccessMsg] = useState('');
   const [loading, setLoading] = useState(false);
+  const [creatingSuperuser, setCreatingSuperuser] = useState(false);
 
   const handleLogin = async (e) => {
     e.preventDefault();
     setError('');
+    setSuccessMsg('');
     setLoading(true);
     try {
       await authService.login(email, password);
@@ -23,6 +26,21 @@ const Login = () => {
       setError(err.response?.data?.message || err.response?.data?.detail || 'Invalid email or password. Please try again.');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleCreateSuperuser = async () => {
+    setError('');
+    setSuccessMsg('');
+    setCreatingSuperuser(true);
+    try {
+      const res = await authService.createSuperuser({ email, password });
+      setSuccessMsg(res.message || 'Superuser created successfully! You can now Sign In.');
+    } catch (err) {
+      console.error(err);
+      setError(err.response?.data?.message || err.response?.data?.detail || 'Failed to create superuser.');
+    } finally {
+      setCreatingSuperuser(false);
     }
   };
 
@@ -44,6 +62,7 @@ const Login = () => {
           </Box>
 
           {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
+          {successMsg && <Alert severity="success" sx={{ mb: 2 }}>{successMsg}</Alert>}
 
           <form onSubmit={handleLogin}>
             <TextField 
@@ -71,12 +90,24 @@ const Login = () => {
               variant="contained" 
               color="primary" 
               size="large"
-              disabled={loading}
-              sx={{ mt: 3, mb: 2, py: 1.5 }}
+              disabled={loading || creatingSuperuser}
+              sx={{ mt: 3, mb: 1.5, py: 1.5 }}
             >
               {loading ? <CircularProgress size={24} color="inherit" /> : 'Sign In'}
             </Button>
           </form>
+
+          <Button
+            fullWidth
+            variant="outlined"
+            color="secondary"
+            size="medium"
+            disabled={loading}
+            onClick={() => navigate('/create-superuser')}
+            sx={{ py: 1 }}
+          >
+            Create Superuser
+          </Button>
         </CardContent>
       </Card>
     </Box>

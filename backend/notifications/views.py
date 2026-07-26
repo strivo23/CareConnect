@@ -1,54 +1,349 @@
+from django.utils import timezone
+from django.db.models import Q
 from rest_framework import viewsets, permissions, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
-from django.db.models import Q
-from .models import Notification
-from .serializers import NotificationSerializer
+from rest_framework.views import APIView
+from rest_framework.pagination import PageNumberPagination
+
+from .models import Notification, FCMDevice, NotificationTemplate, NotificationLog, SMSLog
+from .serializers import (
+    NotificationSerializer,
+    FCMDeviceSerializer,
+    NotificationTemplateSerializer,
+    NotificationLogSerializer,
+    SMSLogSerializer,
+)
+
+
+class NotificationPagination(PageNumberPagination):
+    page_size = 20
+    page_size_query_param = 'page_size'
+    max_page_size = 100
+
 
 class NotificationViewSet(viewsets.ModelViewSet):
-    queryset = Notification.objects.all()
+    """
+    ViewSet for Notifications with:
+      - Pagination (20 notifications per request)
+      - User ownership scoping & Admin override
+      - Database index performance optimizations
+      - Full audit logging for Created, Read, and Deleted events
+    """
     serializer_class = NotificationSerializer
     permission_classes = [permissions.IsAuthenticated]
-    pagination_class = None
+    pagination_class = NotificationPagination
 
     def get_queryset(self):
-        # Return notifications targeted to this user, or general ones where user is null
-        return Notification.objects.filter(
-            Q(user=self.request.user) | Q(user__isnull=True)
-        ).order_by('-created_at')
+        user = self.request.user
+
+        # Security Scoping: Admin sees all; Regular users see only their own (or null broadcast)
+        if getattr(user, 'role', '') == 'ADMIN' or user.is_staff:
+            qs = Notification.objects.all()
+        else:
+            qs = Notification.objects.filter(Q(user=user) | Q(user__isnull=True))
+
+        # Query Filters
+        category = self.request.query_params.get('category')
+        if category and category.lower() != 'all':
+            if category.lower() == 'emergency' or category.lower() == 'sos':
+                qs = qs.filter(Q(category__iexact='sos') | Q(category__iexact='emergency'))
+            else:
+                qs = qs.filter(category__iexact=category)
+
+        priority = self.request.query_params.get('priority')
+        if priority:
+            qs = qs.filter(priority__iexact=priority)
+
+        recipient_role = self.request.query_params.get('recipient_role')
+        if recipient_role:
+            qs = qs.filter(recipient_role__iexact=recipient_role)
+
+        is_read = self.request.query_params.get('is_read')
+        if is_read is not None:
+            if is_read.lower() in ['true', '1']:
+                qs = qs.filter(is_read=True)
+            elif is_read.lower() in ['false', '0']:
+                qs = qs.filter(is_read=False)
+
+        # Sorting
+        sort_by = self.request.query_params.get('sort_by') or self.request.query_params.get('ordering')
+        if sort_by == 'priority':
+            qs = qs.order_by('-priority', '-created_at')
+        elif sort_by == 'unread':
+            qs = qs.order_by('is_read', '-created_at')
+        else:
+            qs = qs.order_by('-created_at')
+
+        return qs
+
+    def get_object(self):
+        pk = self.kwargs.get('pk')
+        user = self.request.user
+        
+        # Ownership check for 403 Forbidden vs 404 Not Found
+        try:
+            notification = Notification.objects.get(pk=pk)
+        except Notification.DoesNotExist:
+            from rest_framework.exceptions import NotFound
+            raise NotFound("Notification not found.")
+
+        if not (user.is_staff or getattr(user, 'role', '') == 'ADMIN') and notification.user and notification.user != user:
+            from rest_framework.exceptions import PermissionDenied
+            raise PermissionDenied("You do not have permission to access or modify this notification.")
+
+        return notification
+
+
+    def destroy(self, request, *args, **kwargs):
+        """
+        Delete single notification with strict recipient ownership validation.
+        """
+        notification = self.get_object()
+        user = request.user
+
+        # Ownership validation
+        if not (user.is_staff or getattr(user, 'role', '') == 'ADMIN') and notification.user and notification.user != user:
+            return Response(
+                {"detail": "You do not have permission to delete this notification."},
+                status=status.HTTP_403_FORBIDDEN
+            )
+
+        # Record Audit Log
+        NotificationLog.objects.create(
+            user=user,
+            channel='IN_APP_DELETED',
+            status='SUCCESS',
+            recipient=user.email,
+            title=notification.title,
+            message=f"Notification #{notification.id} deleted by user."
+        )
+
+        return super().destroy(request, *args, **kwargs)
 
     @action(detail=True, methods=['post', 'patch'], url_path='read')
     def mark_read(self, request, pk=None):
+        """
+        Mark specific notification read with recipient ownership validation.
+        """
         notification = self.get_object()
-        notification.is_read = True
-        notification.save()
-        return Response({"message": "Notification marked as read", "is_read": True})
+        user = request.user
+
+        if not (user.is_staff or getattr(user, 'role', '') == 'ADMIN') and notification.user and notification.user != user:
+            return Response(
+                {"detail": "You do not have permission to modify this notification."},
+                status=status.HTTP_403_FORBIDDEN
+            )
+
+        if not notification.is_read:
+            notification.is_read = True
+            notification.read_time = timezone.now()
+            notification.save(update_fields=['is_read', 'read_time'])
+
+            # Audit Log
+            NotificationLog.objects.create(
+                user=user,
+                channel='IN_APP_READ',
+                status='SUCCESS',
+                recipient=user.email,
+                title=notification.title,
+                message=f"Notification #{notification.id} marked read."
+            )
+
+        return Response(NotificationSerializer(notification).data, status=status.HTTP_200_OK)
+
+    @action(detail=False, methods=['get'], url_path='unread')
+    def unread(self, request):
+        """GET /api/notifications/unread/"""
+        qs = self.get_queryset().filter(is_read=False)
+        page = self.paginate_queryset(qs)
+        if page is not None:
+            serializer = self.get_serializer(page, many=True)
+            return self.get_paginated_response(serializer.data)
+        serializer = self.get_serializer(qs, many=True)
+        return Response(serializer.data)
+
+    @action(detail=False, methods=['get'], url_path='count')
+    def count(self, request):
+        """GET /api/notifications/count/ - Lightweight unread count"""
+        user = request.user
+        if getattr(user, 'role', '') == 'ADMIN' or user.is_staff:
+            unread_count = Notification.objects.filter(is_read=False).count()
+        else:
+            unread_count = Notification.objects.filter(
+                Q(user=user) | Q(user__isnull=True),
+                is_read=False
+            ).count()
+        return Response({"unread_count": unread_count})
+
+    @action(detail=False, methods=['post'], url_path='read-all')
+    def mark_all_read(self, request):
+        """POST /api/notifications/read-all/"""
+        user = request.user
+        now = timezone.now()
+
+        if getattr(user, 'role', '') == 'ADMIN' or user.is_staff:
+            qs = Notification.objects.filter(is_read=False)
+        else:
+            qs = Notification.objects.filter(Q(user=user) | Q(user__isnull=True), is_read=False)
+
+        updated_count = qs.update(is_read=True, read_time=now)
+
+        NotificationLog.objects.create(
+            user=user,
+            channel='IN_APP_READ_ALL',
+            status='SUCCESS',
+            recipient=user.email,
+            title='Mark All Read',
+            message=f"Marked {updated_count} notifications as read."
+        )
+
+        return Response({"message": f"{updated_count} notifications marked as read", "count": updated_count})
+
+    @action(detail=False, methods=['post'], url_path='delete-multiple')
+    def delete_multiple(self, request):
+        """POST /api/notifications/delete-multiple/"""
+        ids = request.data.get('ids', [])
+        if not ids or not isinstance(ids, list):
+            return Response({"detail": "List of 'ids' required."}, status=status.HTTP_400_BAD_REQUEST)
+
+        user = request.user
+        if getattr(user, 'role', '') == 'ADMIN' or user.is_staff:
+            target_qs = Notification.objects.filter(id__in=ids)
+        else:
+            target_qs = Notification.objects.filter(id__in=ids, user=user)
+
+        count = target_qs.count()
+        target_qs.delete()
+
+        NotificationLog.objects.create(
+            user=user,
+            channel='IN_APP_DELETE_MULTIPLE',
+            status='SUCCESS',
+            recipient=user.email,
+            title='Delete Multiple Notifications',
+            message=f"Deleted {count} notifications."
+        )
+
+        return Response({"message": f"{count} notifications deleted", "count": count})
+
+    @action(detail=False, methods=['post'], url_path='mark-multiple-read')
+    def mark_multiple_read(self, request):
+        """POST /api/notifications/mark-multiple-read/"""
+        ids = request.data.get('ids', [])
+        if not ids or not isinstance(ids, list):
+            return Response({"detail": "List of 'ids' required."}, status=status.HTTP_400_BAD_REQUEST)
+
+        user = request.user
+        now = timezone.now()
+        if getattr(user, 'role', '') == 'ADMIN' or user.is_staff:
+            target_qs = Notification.objects.filter(id__in=ids, is_read=False)
+        else:
+            target_qs = Notification.objects.filter(id__in=ids, user=user, is_read=False)
+
+        count = target_qs.update(is_read=True, read_time=now)
+        return Response({"message": f"{count} notifications marked read", "count": count})
 
     @action(detail=False, methods=['get'], url_path='guardian')
     def guardian(self, request):
-        # Return only notifications of category 'sos' targeted to this specific user (guardian)
         queryset = Notification.objects.filter(
             user=request.user,
             category='sos'
         ).order_by('-created_at')
         serializer = self.get_serializer(queryset, many=True)
-        
-        # Printing API Response log as requested
-        print(f"API Response: {serializer.data}")
-        
         return Response(serializer.data)
 
-    @action(detail=False, methods=['post'], url_path='mark-all-read')
-    def mark_all_read(self, request):
-        Notification.objects.filter(
-            Q(user=request.user) | Q(user__isnull=True),
+
+# ── Standalone APIViews matching exact requested path structures ─────────────
+
+class UnreadCountAPIView(APIView):
+    """GET /api/notifications/count/"""
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        user = request.user
+        count = Notification.objects.filter(
+            Q(user=user) | Q(user__isnull=True),
             is_read=False
-        ).update(is_read=True)
-        return Response({"message": "All notifications marked as read"})
+        ).count()
+        return Response({"unread_count": count})
 
 
-from .models import FCMDevice, NotificationTemplate, NotificationLog
-from .serializers import FCMDeviceSerializer, NotificationTemplateSerializer, NotificationLogSerializer
+class UnreadNotificationsAPIView(APIView):
+    """GET /api/notifications/unread/"""
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        user = request.user
+        paginator = NotificationPagination()
+        qs = Notification.objects.filter(
+            Q(user=user) | Q(user__isnull=True),
+            is_read=False
+        ).order_by('-created_at')
+        page = paginator.paginate_queryset(qs, request)
+        serializer = NotificationSerializer(page, many=True)
+        return paginator.get_paginated_response(serializer.data)
+
+
+class MarkNotificationReadAPIView(APIView):
+    """POST /api/notifications/read/<id>/ or /api/notifications/<id>/read/"""
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request, pk):
+        try:
+            notification = Notification.objects.get(pk=pk)
+        except Notification.DoesNotExist:
+            return Response({"detail": "Notification not found."}, status=status.HTTP_404_NOT_FOUND)
+
+        user = request.user
+        if not (user.is_staff or getattr(user, 'role', '') == 'ADMIN') and notification.user and notification.user != user:
+            return Response({"detail": "You do not have permission to modify this notification."}, status=status.HTTP_403_FORBIDDEN)
+
+        notification.is_read = True
+        notification.read_time = timezone.now()
+        notification.save(update_fields=['is_read', 'read_time'])
+
+        NotificationLog.objects.create(
+            user=user,
+            channel='IN_APP_READ',
+            status='SUCCESS',
+            recipient=user.email,
+            title=notification.title,
+            message=f"Notification #{notification.id} marked read."
+        )
+
+        return Response(NotificationSerializer(notification).data, status=status.HTTP_200_OK)
+
+
+class MarkAllNotificationsReadAPIView(APIView):
+    """POST /api/notifications/read-all/"""
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request):
+        user = request.user
+        now = timezone.now()
+        updated_count = Notification.objects.filter(
+            Q(user=user) | Q(user__isnull=True),
+            is_read=False
+        ).update(is_read=True, read_time=now)
+
+        return Response({"message": f"{updated_count} notifications marked read", "count": updated_count})
+
+
+class NotificationHistoryAPIView(APIView):
+    """GET /api/notifications/history/"""
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        paginator = NotificationPagination()
+        logs = NotificationLog.objects.all().order_by('-created_at')
+        if not (request.user.is_staff or getattr(request.user, 'role', '') == 'ADMIN'):
+            logs = logs.filter(user=request.user)
+
+        page = paginator.paginate_queryset(logs, request)
+        serializer = NotificationLogSerializer(page, many=True)
+        return paginator.get_paginated_response(serializer.data)
+
 
 class FCMDeviceViewSet(viewsets.ModelViewSet):
     queryset = FCMDevice.objects.all()
@@ -56,11 +351,32 @@ class FCMDeviceViewSet(viewsets.ModelViewSet):
     permission_classes = [permissions.IsAuthenticated]
 
     def perform_create(self, serializer):
+        token = serializer.validated_data.get('token')
+        FCMDevice.objects.filter(token=token).delete()
         serializer.save(user=self.request.user)
 
 
+class FCMDeviceRegisterAPIView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request):
+        token = request.data.get('token')
+        if not token:
+            return Response({'detail': 'FCM token is required.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        FCMDevice.objects.filter(token=token).exclude(user=request.user).delete()
+        device, created = FCMDevice.objects.update_or_create(
+            token=token,
+            defaults={'user': request.user}
+        )
+        return Response(
+            FCMDeviceSerializer(device).data,
+            status=status.HTTP_201_CREATED if created else status.HTTP_200_OK
+        )
+
+
 class NotificationTemplateViewSet(viewsets.ModelViewSet):
-    queryset = NotificationTemplate.objects.all()
+    queryset = NotificationTemplate.objects.all().order_by('-created_at')
     serializer_class = NotificationTemplateSerializer
     permission_classes = [permissions.IsAuthenticated]
 
@@ -69,4 +385,11 @@ class NotificationLogViewSet(viewsets.ReadOnlyModelViewSet):
     queryset = NotificationLog.objects.all().order_by('-created_at')
     serializer_class = NotificationLogSerializer
     permission_classes = [permissions.IsAuthenticated]
+    pagination_class = NotificationPagination
 
+
+class SMSLogViewSet(viewsets.ReadOnlyModelViewSet):
+    queryset = SMSLog.objects.all().order_by('-sent_at')
+    serializer_class = SMSLogSerializer
+    permission_classes = [permissions.IsAuthenticated]
+    pagination_class = NotificationPagination

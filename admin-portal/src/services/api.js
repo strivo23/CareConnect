@@ -51,6 +51,14 @@ export const authService = {
     }
     return response.data;
   },
+  sendSuperuserOTP: async (email) => {
+    const response = await apiClient.post('/accounts/send-superuser-otp/', { email });
+    return response.data;
+  },
+  createSuperuser: async (data = {}) => {
+    const response = await apiClient.post('/accounts/create-superuser/', data);
+    return response.data;
+  },
   logout: () => {
     localStorage.removeItem('access_token');
     localStorage.removeItem('refresh_token');

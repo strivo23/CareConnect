@@ -7,14 +7,23 @@ import '../services/notification_repository.dart';
 import '../core/services/local_storage_service.dart';
 
 class NotificationsProvider extends ChangeNotifier {
-  NotificationsProvider({NotificationRepository? repository}) : _repository = repository ?? NotificationRepository();
+  NotificationsProvider({NotificationRepository? repository})
+      : _repository = repository ?? NotificationRepository();
 
   final NotificationRepository _repository;
 
   bool _isLoading = false;
+  bool _isLoadingMore = false;
   bool _isOffline = false;
-  List<AppNotificationModel> _notifications = const [];
-  List<AppNotificationModel> _guardianNotifications = const [];
+  bool _hasMore = true;
+  int _currentPage = 1;
+  int _serverUnreadCount = 0;
+
+  String _selectedCategory = 'All';
+  String _selectedSort = 'Newest';
+
+  List<AppNotificationModel> _notifications = [];
+  List<AppNotificationModel> _guardianNotifications = [];
 
   Timer? _pollingTimer;
   final Set<String> _knownNotificationIds = {};
@@ -22,187 +31,252 @@ class NotificationsProvider extends ChangeNotifier {
   void Function(AppNotificationModel)? onNewEmergencyNotification;
 
   bool get isLoading => _isLoading;
+  bool get isLoadingMore => _isLoadingMore;
   bool get isOffline => _isOffline;
+  bool get hasMore => _hasMore;
+  int get currentPage => _currentPage;
+  String get selectedCategory => _selectedCategory;
+  String get selectedSort => _selectedSort;
+
   List<AppNotificationModel> get notifications => _notifications;
   List<AppNotificationModel> get guardianNotifications => _guardianNotifications;
-  
-  int get unreadCount =>
-      _notifications.where((notification) => !notification.isRead).length +
-      _guardianNotifications.where((notification) => !notification.isRead).length;
 
-  Future<void> load() async {
-    _setLoading(true);
+  int get unreadCount => _serverUnreadCount > 0
+      ? _serverUnreadCount
+      : _notifications.where((n) => !n.isRead).length;
+
+  Future<void> load({bool refresh = false}) async {
+    if (refresh) {
+      _currentPage = 1;
+      _hasMore = true;
+    }
+
+    if (_currentPage == 1) {
+      _setLoading(true);
+    } else {
+      _isLoadingMore = true;
+      notifyListeners();
+    }
+
     try {
-      _notifications = await _repository.fetchNotifications();
+      final res = await _repository.fetchNotifications(
+        page: _currentPage,
+        category: _selectedCategory,
+        sortBy: _getSortQuery(),
+      );
+
+      final fetchedList = res['notifications'] as List<AppNotificationModel>;
+      _hasMore = res['hasMore'] as bool? ?? false;
+
+      if (_currentPage == 1) {
+        _notifications = fetchedList;
+      } else {
+        _notifications.addAll(fetchedList);
+      }
+
+      for (final n in _notifications) {
+        _knownNotificationIds.add(n.id);
+      }
+
       _isOffline = false;
-    } catch (_) {
+      await fetchUnreadCount();
+    } catch (e) {
       _isOffline = true;
     } finally {
       _setLoading(false);
+      _isLoadingMore = false;
+      notifyListeners();
     }
   }
 
-  Future<void> refresh() => load();
+  Future<void> loadMore() async {
+    if (_isLoading || _isLoadingMore || !_hasMore) return;
+    _currentPage++;
+    await load();
+  }
 
-  // ── Guardian Notification Polling ────────────────────────────────────────
+  Future<void> refresh() => load(refresh: true);
 
-  void startGuardianPolling() {
+  void setCategoryFilter(String category) {
+    if (_selectedCategory == category) return;
+    _selectedCategory = category;
+    load(refresh: true);
+  }
+
+  void setSortOption(String sort) {
+    if (_selectedSort == sort) return;
+    _selectedSort = sort;
+    load(refresh: true);
+  }
+
+  String _getSortQuery() {
+    switch (_selectedSort) {
+      case 'Priority':
+        return 'priority';
+      case 'Unread':
+        return 'unread';
+      case 'Newest':
+      default:
+        return '-created_at';
+    }
+  }
+
+  Future<void> fetchUnreadCount() async {
+    try {
+      _serverUnreadCount = await _repository.fetchUnreadCount();
+      notifyListeners();
+    } catch (_) {}
+  }
+
+  // ── Polling & Real-time Auto Refresh ────────────────────────────────────
+
+  void startGuardianPolling() => startRealtimePolling();
+  void stopGuardianPolling() => stopRealtimePolling();
+  Future<void> pollGuardianNotifications() => pollNotifications();
+  Future<void> loadCachedGuardianNotifications() async {}
+
+
+  void startRealtimePolling() {
+
     _pollingTimer?.cancel();
-    // Fetch once immediately
-    pollGuardianNotifications();
-    _pollingTimer = Timer.periodic(const Duration(seconds: 5), (timer) async {
-      await pollGuardianNotifications();
+    pollNotifications();
+    _pollingTimer = Timer.periodic(const Duration(seconds: 5), (_) async {
+      await pollNotifications();
     });
   }
 
-  void stopGuardianPolling() {
+  void stopRealtimePolling() {
     _pollingTimer?.cancel();
     _pollingTimer = null;
   }
 
-  Future<void> pollGuardianNotifications() async {
+  Future<void> pollNotifications() async {
     try {
-      final list = await _repository.fetchGuardianNotifications();
-      AppNotificationModel? newEmergency;
+      final res = await _repository.fetchNotifications(page: 1, category: _selectedCategory, sortBy: _getSortQuery());
+      final list = res['notifications'] as List<AppNotificationModel>;
 
-      bool hasNew = false;
+      AppNotificationModel? newEmergencyAlert;
+
       for (final notif in list) {
         if (!_knownNotificationIds.contains(notif.id)) {
           _knownNotificationIds.add(notif.id);
-          hasNew = true;
-          if (!notif.isRead && (notif.priority == 'HIGH' || notif.category.toLowerCase() == 'sos')) {
-            newEmergency = notif;
+          if (!notif.isRead && (notif.priority == 'HIGH' || notif.priority == 'CRITICAL' || notif.category.toLowerCase() == 'sos' || notif.category.toLowerCase() == 'emergency')) {
+            newEmergencyAlert = notif;
           }
         }
       }
 
-      bool isDifferent = hasNew || list.length != _guardianNotifications.length;
-      if (!isDifferent) {
-        for (int i = 0; i < list.length; i++) {
-          if (list[i].id != _guardianNotifications[i].id || list[i].isRead != _guardianNotifications[i].isRead) {
-            isDifferent = true;
-            break;
-          }
-        }
-      }
+      _notifications = list;
+      await fetchUnreadCount();
+      notifyListeners();
 
-      if (isDifferent) {
-        _guardianNotifications = list;
-        await _cacheGuardianNotifications(list);
-        notifyListeners();
-      }
-
-      if (newEmergency != null && onNewEmergencyNotification != null) {
-        onNewEmergencyNotification!(newEmergency);
+      if (newEmergencyAlert != null && onNewEmergencyNotification != null) {
+        onNewEmergencyNotification!(newEmergencyAlert);
       }
     } catch (e) {
-      debugPrint('Error polling guardian notifications: $e');
+      debugPrint('Error polling notifications: $e');
     }
   }
 
-  Future<void> loadCachedGuardianNotifications() async {
-    final raw = await LocalStorageService.instance.getString('careconnect_guardian_notifications');
-    if (raw != null && raw.isNotEmpty) {
-      try {
-        final decoded = jsonDecode(raw) as List<dynamic>;
-        _guardianNotifications = decoded
-            .map((item) => AppNotificationModel.fromJson(Map<String, dynamic>.from(item as Map)))
-            .toList();
-        for (final notif in _guardianNotifications) {
-          _knownNotificationIds.add(notif.id);
-        }
-        notifyListeners();
-      } catch (_) {}
-    }
-  }
-
-  Future<void> _cacheGuardianNotifications(List<AppNotificationModel> list) async {
-    final jsonString = jsonEncode(list.map((item) => item.toJson()).toList());
-    await LocalStorageService.instance.saveString('careconnect_guardian_notifications', jsonString);
-  }
-
-  // ─────────────────────────────────────────────────────────────────────────
-
-  Future<void> markAllAsRead() async {
-    await _repository.markAllAsRead();
-    _notifications = _notifications
-        .map(
-          (item) => AppNotificationModel(
-            id: item.id,
-            title: item.title,
-            message: item.message,
-            category: item.category,
-            isRead: true,
-            createdAt: item.createdAt,
-            priority: item.priority,
-            location: item.location,
-            incidentId: item.incidentId,
-            residentName: item.residentName,
-            emergencyCategory: item.emergencyCategory,
-            incidentMessage: item.incidentMessage,
-            incidentStatus: item.incidentStatus,
-          ),
-        )
-        .toList();
-    notifyListeners();
-  }
+  // ── Multi-select & Batch Actions ───────────────────────────────────────
 
   Future<void> markAsRead(String id) async {
     await _repository.markAsRead(id);
-    
-    // Check main notifications
-    _notifications = _notifications
-        .map(
-          (item) => item.id == id
-              ? AppNotificationModel(
-                  id: item.id,
-                  title: item.title,
-                  message: item.message,
-                  category: item.category,
-                  isRead: true,
-                  createdAt: item.createdAt,
-                  priority: item.priority,
-                  location: item.location,
-                  incidentId: item.incidentId,
-                  residentName: item.residentName,
-                  emergencyCategory: item.emergencyCategory,
-                  incidentMessage: item.incidentMessage,
-                  incidentStatus: item.incidentStatus,
-                )
-              : item,
-        )
-        .toList();
+    _notifications = _notifications.map((n) {
+      if (n.id == id) {
+        return AppNotificationModel(
+          id: n.id,
+          title: n.title,
+          message: n.message,
+          category: n.category,
+          isRead: true,
+          createdAt: n.createdAt,
+          priority: n.priority,
+          location: n.location,
+          incidentId: n.incidentId,
+          residentName: n.residentName,
+          emergencyCategory: n.emergencyCategory,
+          incidentMessage: n.incidentMessage,
+          incidentStatus: n.incidentStatus,
+          latitude: n.latitude,
+          longitude: n.longitude,
+          address: n.address,
+        );
+      }
+      return n;
+    }).toList();
+    if (_serverUnreadCount > 0) _serverUnreadCount--;
+    notifyListeners();
+  }
 
-    // Check guardian notifications
-    _guardianNotifications = _guardianNotifications
-        .map(
-          (item) => item.id == id
-              ? AppNotificationModel(
-                  id: item.id,
-                  title: item.title,
-                  message: item.message,
-                  category: item.category,
-                  isRead: true,
-                  createdAt: item.createdAt,
-                  priority: item.priority,
-                  location: item.location,
-                  incidentId: item.incidentId,
-                  residentName: item.residentName,
-                  emergencyCategory: item.emergencyCategory,
-                  incidentMessage: item.incidentMessage,
-                  incidentStatus: item.incidentStatus,
-                )
-              : item,
-        )
-        .toList();
+  Future<void> markAllAsRead() async {
+    await _repository.markAllAsRead();
+    _notifications = _notifications.map((n) {
+      return AppNotificationModel(
+        id: n.id,
+        title: n.title,
+        message: n.message,
+        category: n.category,
+        isRead: true,
+        createdAt: n.createdAt,
+        priority: n.priority,
+        location: n.location,
+        incidentId: n.incidentId,
+        residentName: n.residentName,
+        emergencyCategory: n.emergencyCategory,
+        incidentMessage: n.incidentMessage,
+        incidentStatus: n.incidentStatus,
+        latitude: n.latitude,
+        longitude: n.longitude,
+        address: n.address,
+      );
+    }).toList();
+    _serverUnreadCount = 0;
+    notifyListeners();
+  }
 
+  Future<void> markMultipleRead(List<String> ids) async {
+    if (ids.isEmpty) return;
+    await _repository.markMultipleRead(ids);
+    _notifications = _notifications.map((n) {
+      if (ids.contains(n.id)) {
+        return AppNotificationModel(
+          id: n.id,
+          title: n.title,
+          message: n.message,
+          category: n.category,
+          isRead: true,
+          createdAt: n.createdAt,
+          priority: n.priority,
+          location: n.location,
+          incidentId: n.incidentId,
+          residentName: n.residentName,
+          emergencyCategory: n.emergencyCategory,
+          incidentMessage: n.incidentMessage,
+          incidentStatus: n.incidentStatus,
+          latitude: n.latitude,
+          longitude: n.longitude,
+          address: n.address,
+        );
+      }
+      return n;
+    }).toList();
+    fetchUnreadCount();
     notifyListeners();
   }
 
   Future<void> deleteNotification(String id) async {
     await _repository.deleteNotification(id);
-    _notifications = _notifications.where((item) => item.id != id).toList();
-    _guardianNotifications = _guardianNotifications.where((item) => item.id != id).toList();
+    _notifications = _notifications.where((n) => n.id != id).toList();
+    fetchUnreadCount();
+    notifyListeners();
+  }
+
+  Future<void> deleteMultiple(List<String> ids) async {
+    if (ids.isEmpty) return;
+    await _repository.deleteMultiple(ids);
+    _notifications = _notifications.where((n) => !ids.contains(n.id)).toList();
+    fetchUnreadCount();
     notifyListeners();
   }
 
@@ -217,7 +291,7 @@ class NotificationsProvider extends ChangeNotifier {
 
   @override
   void dispose() {
-    stopGuardianPolling();
+    stopRealtimePolling();
     super.dispose();
   }
 }

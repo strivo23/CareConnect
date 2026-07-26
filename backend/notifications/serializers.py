@@ -14,15 +14,21 @@ class NotificationSerializer(serializers.ModelSerializer):
             'message',
             'category',
             'is_read',
+            'read_time',
             'created_at',
             'priority',
+            'delivery_status',
+            'delivery_channel',
+            'recipient_role',
+            'notification_type',
             'location',
             'incident',
             'incident_details',
         ]
 
 
-from .models import FCMDevice, NotificationTemplate, NotificationLog
+
+from .models import FCMDevice, NotificationTemplate, NotificationLog, SMSLog
 
 class FCMDeviceSerializer(serializers.ModelSerializer):
     class Meta:
@@ -41,5 +47,12 @@ class NotificationLogSerializer(serializers.ModelSerializer):
     class Meta:
         model = NotificationLog
         fields = '__all__'
+
+
+class SMSLogSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = SMSLog
+        fields = '__all__'
+
 
 

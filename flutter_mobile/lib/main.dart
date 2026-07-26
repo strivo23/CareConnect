@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:firebase_core/firebase_core.dart';
@@ -10,6 +11,8 @@ import 'providers/contacts_provider.dart';
 import 'providers/emergency_provider.dart';
 import 'providers/notifications_provider.dart';
 import 'core/services/push_notification_service.dart';
+import 'services/fcm_notification_service.dart';
+
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -17,31 +20,37 @@ void main() async {
   // 1. Initialize Firebase if not already initialized
   if (Firebase.apps.isEmpty) {
     try {
-      await Firebase.initializeApp();
+      if (kIsWeb) {
+        await Firebase.initializeApp(
+          options: const FirebaseOptions(
+            apiKey: "AIzaSyCareConnectDummyWebKey12345",
+            appId: "1:1234567890:web:careconnectweb12345",
+            messagingSenderId: "1234567890",
+            projectId: "careconnect-app",
+          ),
+        );
+      } else {
+        await Firebase.initializeApp();
+      }
       debugPrint('[Firebase] Firebase.initializeApp() completed.');
-    } on FirebaseException catch (e) {
-      debugPrint('[Firebase] FirebaseException during initializeApp: ${e.code} - ${e.message}');
-    } on PlatformException catch (e) {
-      debugPrint('[Firebase] PlatformException during initializeApp: ${e.code} - ${e.message}');
-    } on Exception catch (e) {
-      debugPrint('[Firebase] Exception during initializeApp: $e');
     } catch (e) {
-      debugPrint('[Firebase] Unexpected error during initializeApp: $e');
+      debugPrint('[Firebase] Error during initializeApp: $e');
     }
   }
 
-  // 2. Initialize PushNotificationService
+  // 2. Initialize PushNotificationService & FCMNotificationService
   try {
     await PushNotificationService.instance.init();
-  } on FirebaseException catch (e) {
-    debugPrint('[PushNotificationService] FirebaseException in main: ${e.code} - ${e.message}');
-  } on PlatformException catch (e) {
-    debugPrint('[PushNotificationService] PlatformException in main: ${e.code} - ${e.message}');
-  } on Exception catch (e) {
-    debugPrint('[PushNotificationService] Exception in main: $e');
-  } catch (e, stackTrace) {
-    debugPrint('[PushNotificationService] Unexpected error in main: $e\n$stackTrace');
+  } catch (e) {
+    debugPrint('[PushNotificationService] Error in main: $e');
   }
+
+  try {
+    await FCMNotificationService.instance.initialize();
+  } catch (e) {
+    debugPrint('[FCMNotificationService] Error in main: $e');
+  }
+
 
   // 3. Run application
   runApp(const CareConnectBootstrap());

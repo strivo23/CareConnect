@@ -1,3 +1,4 @@
+import 'package:dio/dio.dart';
 import '../core/services/api_client.dart';
 import '../models/emergency_action_model.dart';
 
@@ -36,4 +37,40 @@ class EmergencyRepository {
     );
     return Map<String, dynamic>.from(response.data as Map);
   }
+
+  /// Upload text description and/or voice recording for an existing SOS incident.
+  Future<Map<String, dynamic>> uploadSOSMessage({
+    required int incidentId,
+    String? emergencyDescription,
+    String? voiceFilePath,
+    void Function(int sent, int total)? onSendProgress,
+  }) async {
+    final formData = FormData();
+
+    if (emergencyDescription != null && emergencyDescription.trim().isNotEmpty) {
+      formData.fields.add(MapEntry('emergency_description', emergencyDescription.trim()));
+    }
+
+    if (voiceFilePath != null && voiceFilePath.isNotEmpty) {
+      final fileName = voiceFilePath.split('/').last;
+      formData.files.add(
+        MapEntry(
+          'voice_message',
+          await MultipartFile.fromFile(
+            voiceFilePath,
+            filename: fileName,
+          ),
+        ),
+      );
+    }
+
+    final response = await _client.post(
+      '/api/sos/$incidentId/message/',
+      data: formData,
+      onSendProgress: onSendProgress,
+    );
+
+    return Map<String, dynamic>.from(response.data as Map);
+  }
 }
+

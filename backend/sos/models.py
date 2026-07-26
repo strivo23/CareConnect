@@ -39,6 +39,8 @@ class SOSIncident(models.Model):
     )
 
     message = models.TextField(blank=True)
+    emergency_description = models.TextField(blank=True)
+    voice_message = models.FileField(upload_to="voice_messages/", null=True, blank=True)
 
     latitude = models.DecimalField(
         max_digits=15,
@@ -46,6 +48,7 @@ class SOSIncident(models.Model):
         null=True,
         blank=True
     )
+
 
     longitude = models.DecimalField(
         max_digits=15,
@@ -115,11 +118,22 @@ class SOSEmergencyMessage(models.Model):
 
 
 class EscalationConfig(models.Model):
-    response_time_window = models.IntegerField(default=30)  # response time window in seconds
+    response_time_minutes = models.IntegerField(default=5)
+    escalation_enabled = models.BooleanField(default=True)
+    notify_security = models.BooleanField(default=True)
+    notify_volunteers = models.BooleanField(default=True)
+    notify_admin = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True, null=True, blank=True)
+    updated_at = models.DateTimeField(auto_now=True, null=True, blank=True)
+    
+    # Backward compatibility properties/fields
+    response_time_window = models.IntegerField(default=30)  # window in seconds for rapid testing/backwards compatibility
     is_active = models.BooleanField(default=True)
 
     def __str__(self):
-        return f"Escalation Config: {self.response_time_window}s window"
+        return f"Escalation Config: {self.response_time_minutes}m ({self.response_time_window}s window)"
+
+EscalationConfiguration = EscalationConfig  # Alias for requirement compatibility
 
 
 class EscalationLog(models.Model):
@@ -128,8 +142,13 @@ class EscalationLog(models.Model):
         on_delete=models.CASCADE,
         related_name="escalations"
     )
-    step = models.CharField(max_length=50)  # 'Primary Guardian', 'Secondary Guardian', 'Emergency Contacts', 'Security/Admin'
-    status = models.CharField(max_length=20, default='PENDING')  # 'PENDING', 'TRIGGERED', 'CANCELLED'
+    step = models.CharField(max_length=50)  # 'Primary Guardian', 'Secondary Guardian', 'Emergency Contacts', 'Security', 'Volunteers', 'Admin'
+    escalation_level = models.CharField(max_length=50, blank=True, null=True)
+    previous_recipient = models.CharField(max_length=255, blank=True, null=True)
+    new_recipient = models.CharField(max_length=255, blank=True, null=True)
+    reason = models.TextField(blank=True, null=True)
+    status = models.CharField(max_length=20, default='PENDING')  # 'PENDING', 'TRIGGERED', 'ACCEPTED', 'CANCELLED', 'REJECTED'
+    response_status = models.CharField(max_length=50, blank=True, null=True)
     scheduled_at = models.DateTimeField()
     triggered_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)

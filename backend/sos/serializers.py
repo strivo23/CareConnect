@@ -50,6 +50,8 @@ class SOSIncidentSerializer(serializers.ModelSerializer):
             "category",
             "category_name",
             "message",
+            "emergency_description",
+            "voice_message",
             "latitude",
             "longitude",
             "status",
@@ -61,6 +63,7 @@ class SOSIncidentSerializer(serializers.ModelSerializer):
             "updated_at",
         ]
         read_only_fields = fields  # entire serializer is read-only
+
 
     def get_resident_name(self, obj):
         if obj.resident:
@@ -217,6 +220,33 @@ class SOSEmergencyMessageSerializer(serializers.ModelSerializer):
         return value
 
 
+class SOSIncidentMessageUploadSerializer(serializers.Serializer):
+    """
+    Serializer for POST /api/sos/<id>/message/
+    Accepts text only (emergency_description or message), voice only (voice_message), or both. Rejects empty requests.
+    """
+    emergency_description = serializers.CharField(required=False, allow_blank=True)
+    message = serializers.CharField(required=False, allow_blank=True)
+    voice_message = serializers.FileField(required=False, allow_null=True, default=None)
+
+
+    def validate(self, attrs):
+        description = attrs.get("emergency_description") or attrs.get("message") or ""
+        attrs["emergency_description"] = description
+        voice = attrs.get("voice_message")
+
+        has_text = bool(description and description.strip())
+        has_voice = bool(voice)
+
+        if not has_text and not has_voice:
+            raise serializers.ValidationError(
+                "Either emergency description or voice message must be provided."
+            )
+        return attrs
+
+
+
+
 # ---------------------------------------------------------------------------
 # SOSStatusUpdateSerializer — used for status-change PATCH actions
 # ---------------------------------------------------------------------------
@@ -245,6 +275,18 @@ class EscalationConfigSerializer(serializers.ModelSerializer):
 
 
 class EscalationLogSerializer(serializers.ModelSerializer):
+    resident_name = serializers.CharField(source="incident.resident.full_name", read_only=True)
+    category_name = serializers.CharField(source="incident.category.name", read_only=True)
+
     class Meta:
         model = EscalationLog
         fields = '__all__'
+
+
+class SOSRejectSerializer(serializers.Serializer):
+    reason = serializers.CharField(
+        required=False,
+        allow_blank=True,
+        max_length=500,
+        help_text="Optional reason for rejecting the SOS alert.",
+    )

@@ -18,7 +18,14 @@ from django.contrib import admin
 from django.urls import path, include
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 from drf_spectacular.views import SpectacularAPIView, SpectacularSwaggerView, SpectacularRedocView
-from sos.views import ReverseGeocodeAPIView
+from sos.views import (
+    ReverseGeocodeAPIView,
+    EscalationConfigAPIView,
+    EscalationLogViewSet,
+    IncidentEscalationDetailView,
+    SOSAcceptAPIView,
+    SOSRejectAPIView,
+)
 from accounts.views import SendOTPAPIView, VerifyOTPAPIView, ResendOTPAPIView
 
 from emergency.views import (
@@ -30,6 +37,9 @@ from emergency.views import (
     ResidentGuardiansView,
     ChangePrimaryGuardianView,
 )
+
+from django.conf import settings
+from django.conf.urls.static import static
 
 urlpatterns = [
     path("admin/", admin.site.urls),
@@ -51,6 +61,18 @@ urlpatterns = [
     path("api/sos/",           include("sos.urls")),
     path("api/geocode/reverse/", ReverseGeocodeAPIView.as_view(), name="geocode-reverse"),
 
+    # Direct Escalation & Incident Routes (Day 11 API specifications)
+    path("api/escalation/config", EscalationConfigAPIView.as_view(), name="direct-escalation-config"),
+    path("api/escalation/config/", EscalationConfigAPIView.as_view(), name="direct-escalation-config-slash"),
+    path("api/escalation/logs", EscalationLogViewSet.as_view({'get': 'list'}), name="direct-escalation-logs"),
+    path("api/escalation/logs/", EscalationLogViewSet.as_view({'get': 'list'}), name="direct-escalation-logs-slash"),
+    path("api/incident/<int:pk>/escalation", IncidentEscalationDetailView.as_view(), name="direct-incident-escalation"),
+    path("api/incident/<int:pk>/escalation/", IncidentEscalationDetailView.as_view(), name="direct-incident-escalation-slash"),
+    path("api/incident/<int:pk>/accept", SOSAcceptAPIView.as_view(), name="direct-incident-accept"),
+    path("api/incident/<int:pk>/accept/", SOSAcceptAPIView.as_view(), name="direct-incident-accept-slash"),
+    path("api/incident/<int:pk>/reject", SOSRejectAPIView.as_view(), name="direct-incident-reject"),
+    path("api/incident/<int:pk>/reject/", SOSRejectAPIView.as_view(), name="direct-incident-reject-slash"),
+
     # Direct Guardian & Resident Code Linking APIs
     path("api/guardian/generate-code/", GenerateGuardianCodeView.as_view(), name="guardian-generate-code"),
     path("api/guardian/my-code/", MyGuardianCodeView.as_view(), name="guardian-my-code"),
@@ -61,11 +83,13 @@ urlpatterns = [
     path("api/resident/guardians/", ResidentGuardiansView.as_view(), name="resident-guardians"),
     path("api/resident/change-primary/", ChangePrimaryGuardianView.as_view(), name="resident-change-primary"),
 
-
-
     # API Documentation
     path("api/schema/",        SpectacularAPIView.as_view(),        name="schema"),
     path("api/docs/swagger/",  SpectacularSwaggerView.as_view(url_name="schema"), name="swagger-ui"),
     path("api/docs/redoc/",    SpectacularRedocView.as_view(url_name="schema"),   name="redoc"),
 ]
+
+if settings.DEBUG:
+    urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
+
 

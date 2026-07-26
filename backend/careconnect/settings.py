@@ -178,7 +178,12 @@ DEFAULT_FROM_EMAIL = os.environ.get("DEFAULT_FROM_EMAIL", EMAIL_HOST_USER)
 # settings.py
 SMS_BACKEND = 'django_sms.backends.console.SmsBackend'
 
+# Media files (uploaded voice messages, images, etc.)
+MEDIA_URL = "/media/"
+MEDIA_ROOT = BASE_DIR / "media"
+
 # Firebase Admin SDK
 import os
 from pathlib import Path
 FIREBASE_SERVICE_ACCOUNT_PATH = os.environ.get('FIREBASE_SERVICE_ACCOUNT_PATH', str(BASE_DIR / 'serviceAccountKey.json'))
+

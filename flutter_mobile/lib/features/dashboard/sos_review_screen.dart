@@ -4,6 +4,8 @@ import 'package:go_router/go_router.dart';
 import 'package:dio/dio.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/services/api_client.dart';
+import '../../services/emergency_repository.dart';
+
 
 class SOSReviewScreen extends StatefulWidget {
   const SOSReviewScreen({super.key, required this.data});
@@ -69,7 +71,34 @@ class _SOSReviewScreenState extends State<SOSReviewScreen> {
 
       if (response.statusCode == 201) {
         final resData = response.data as Map<String, dynamic>;
+        final incidentId = resData['id'] is int
+            ? resData['id'] as int
+            : int.tryParse(resData['id'].toString()) ?? 0;
+
+        final voiceFilePath = widget.data['voiceFilePath']?.toString();
+        final emergencyDescription = widget.data['emergency_description']?.toString() ?? widget.data['message']?.toString();
+
+        if (incidentId > 0 && ((voiceFilePath != null && voiceFilePath.isNotEmpty) || (emergencyDescription != null && emergencyDescription.isNotEmpty))) {
+          try {
+            final repo = EmergencyRepository();
+            await repo.uploadSOSMessage(
+              incidentId: incidentId,
+              emergencyDescription: emergencyDescription,
+              voiceFilePath: voiceFilePath,
+            );
+          } catch (uploadErr) {
+            debugPrint('Failed to attach voice/text message: $uploadErr');
+          }
+        }
+
         if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('SOS Emergency Alert dispatched successfully!'),
+              backgroundColor: Colors.green,
+              behavior: SnackBarBehavior.floating,
+            ),
+          );
           context.pushReplacement(
             '/sos-success',
             extra: {
@@ -82,6 +111,7 @@ class _SOSReviewScreenState extends State<SOSReviewScreen> {
       } else {
         throw Exception('Failed to send SOS: ${response.statusMessage}');
       }
+
     } catch (e) {
       String userErrorMsg = 'Failed to dispatch SOS emergency alert.';
       if (e is DioException) {

@@ -12,15 +12,23 @@ class ContactsRepository {
 
   Future<List<RelationshipModel>> fetchRelationships() async {
     final response = await _client.get('/api/emergency/relationships/');
-    final data = response.data as Map<String, dynamic>?;
-    final items = data?['results'] is List ? data!['results'] as List : response.data as List? ?? const [];
+    List items = [];
+    if (response.data is List) {
+      items = response.data as List;
+    } else if (response.data is Map && response.data['results'] is List) {
+      items = response.data['results'] as List;
+    }
     return items.map((item) => RelationshipModel.fromJson(Map<String, dynamic>.from(item as Map))).toList();
   }
 
   Future<List<EmergencyContactModel>> fetchContacts({required int residentId}) async {
     final response = await _client.get('/api/emergency/contacts/', queryParameters: {'resident': residentId});
-    final data = response.data as Map<String, dynamic>?;
-    final items = data?['results'] is List ? data!['results'] as List : response.data as List? ?? const [];
+    List items = [];
+    if (response.data is List) {
+      items = response.data as List;
+    } else if (response.data is Map && response.data['results'] is List) {
+      items = response.data['results'] as List;
+    }
     final contacts = items.map((item) => EmergencyContactModel.fromJson(Map<String, dynamic>.from(item as Map))).toList();
     await LocalStorageService.instance.saveString(
       AppConstants.apiContactsCacheKey,
@@ -31,8 +39,12 @@ class ContactsRepository {
 
   Future<List<GuardianModel>> fetchGuardians({required int residentId}) async {
     final response = await _client.get('/api/emergency/guardians/', queryParameters: {'resident': residentId});
-    final data = response.data as Map<String, dynamic>?;
-    final items = data?['results'] is List ? data!['results'] as List : response.data as List? ?? const [];
+    List items = [];
+    if (response.data is List) {
+      items = response.data as List;
+    } else if (response.data is Map && response.data['results'] is List) {
+      items = response.data['results'] as List;
+    }
     return items.map((item) => GuardianModel.fromJson(Map<String, dynamic>.from(item as Map))).toList();
   }
 

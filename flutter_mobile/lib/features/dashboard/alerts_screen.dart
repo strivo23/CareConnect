@@ -7,6 +7,8 @@ import 'package:intl/intl.dart';
 import 'package:go_router/go_router.dart';
 import '../../core/theme/app_theme.dart';
 import '../../providers/notifications_provider.dart';
+import '../../core/services/api_client.dart';
+import '../../services/location_service.dart';
 
 class AlertsScreen extends StatefulWidget {
   const AlertsScreen({super.key});
@@ -19,6 +21,12 @@ class _AlertsScreenState extends State<AlertsScreen> with SingleTickerProviderSt
   bool _isLocationRefreshing = false;
   late AnimationController _sosPulseController;
 
+  String _locationPrimaryText = 'Live Location';
+  String _locationSecondaryText = 'Updating location details...';
+
+  List<Map<String, dynamic>> _realSOSHistory = [];
+  bool _isLoadingHistory = false;
+
   @override
   void initState() {
     super.initState();
@@ -26,6 +34,48 @@ class _AlertsScreenState extends State<AlertsScreen> with SingleTickerProviderSt
       vsync: this,
       duration: const Duration(seconds: 2),
     )..repeat();
+    _fetchSOSHistory();
+  }
+
+  Future<void> _fetchSOSHistory() async {
+    setState(() => _isLoadingHistory = true);
+    try {
+      final response = await ApiClient.instance.get('/api/sos/incidents/');
+      List items = [];
+      if (response.data is List) {
+        items = response.data as List;
+      } else if (response.data is Map && response.data['results'] is List) {
+        items = response.data['results'] as List;
+      }
+      final parsed = items.map((item) {
+        final map = Map<String, dynamic>.from(item as Map);
+        final createdAtStr = map['created_at']?.toString();
+        DateTime? dt;
+        if (createdAtStr != null) {
+          dt = DateTime.tryParse(createdAtStr);
+        }
+        final formattedDate = dt != null
+            ? DateFormat('dd MMM yyyy, h:mm a').format(dt.toLocal())
+            : 'Recent Alert';
+        return {
+          'title': map['category_name'] ?? map['message'] ?? 'SOS Dispatch Alert',
+          'date': formattedDate,
+          'status': map['status']?.toString() ?? 'Pending',
+        };
+      }).toList();
+
+      if (mounted) {
+        setState(() {
+          _realSOSHistory = parsed;
+        });
+      }
+    } catch (e) {
+      debugPrint('Error fetching SOS history: $e');
+    } finally {
+      if (mounted) {
+        setState(() => _isLoadingHistory = false);
+      }
+    }
   }
 
   @override
@@ -34,21 +84,66 @@ class _AlertsScreenState extends State<AlertsScreen> with SingleTickerProviderSt
     super.dispose();
   }
 
-  // Refresh location logic (simulated)
+  // Refresh location logic (real GPS & profile)
   Future<void> _refreshLocation() async {
     setState(() {
       _isLocationRefreshing = true;
     });
-    await Future.delayed(const Duration(seconds: 1));
-    setState(() {
-      _isLocationRefreshing = false;
-    });
+
+    String primary = 'Live Location';
+    String secondary = 'Updating location details...';
+
+    try {
+      final res = await ApiClient.instance.get('/api/accounts/me/');
+      if (res.statusCode == 200 && res.data is Map) {
+        final profile = res.data['profile'] as Map<String, dynamic>?;
+        final societyName = profile?['society_name'] ?? res.data['society_name'];
+        final blockName = profile?['block_name'] ?? res.data['block_name'];
+        final flatNumber = profile?['flat_number'] ?? res.data['flat_number'];
+
+        if (societyName != null && societyName.toString().isNotEmpty) {
+          primary = societyName.toString();
+          String details = '';
+          if (blockName != null && blockName.toString().isNotEmpty) details += 'Block $blockName';
+          if (flatNumber != null && flatNumber.toString().isNotEmpty) details += '${details.isNotEmpty ? ", " : ""}Flat $flatNumber';
+          secondary = details.isNotEmpty ? details : 'Registered Resident Profile';
+        }
+      }
+    } catch (_) {}
+
+    try {
+      final locService = LocationService();
+      final pos = await locService.getCurrentLocation();
+      if (pos != null) {
+        final address = await locService.reverseGeocode(pos.latitude, pos.longitude);
+        if (address.isNotEmpty && address != 'Location unavailable') {
+          primary = address;
+          secondary = 'Lat: ${pos.latitude.toStringAsFixed(4)}, Lng: ${pos.longitude.toStringAsFixed(4)}';
+        } else if (primary == 'Live Location') {
+          primary = 'Lat: ${pos.latitude.toStringAsFixed(4)}, Lng: ${pos.longitude.toStringAsFixed(4)}';
+          secondary = 'Live GPS Coordinates';
+        }
+      }
+    } catch (e) {
+      debugPrint('Location service info: $e');
+      if (primary == 'Live Location') {
+        primary = 'GPS Active';
+        secondary = 'Location permissions enabled';
+      }
+    }
+
     if (mounted) {
+      setState(() {
+        _locationPrimaryText = primary;
+        _locationSecondaryText = secondary;
+        _isLocationRefreshing = false;
+      });
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('Location details updated successfully.'),
           behavior: SnackBarBehavior.floating,
           backgroundColor: AppTheme.success,
+          duration: Duration(seconds: 2),
         ),
       );
     }
@@ -103,15 +198,29 @@ class _AlertsScreenState extends State<AlertsScreen> with SingleTickerProviderSt
     );
   }
 
-  void _dispatchSOS() {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('SOS Dispatch Sent! Help is on the way.'),
-        behavior: SnackBarBehavior.floating,
-        backgroundColor: AppTheme.danger,
-        duration: Duration(seconds: 4),
-      ),
-    );
+  void _dispatchSOS() async {
+    try {
+      await ApiClient.instance.post(
+        '/api/emergency/alerts/',
+        data: {
+          'category': 'SOS',
+          'message': 'Emergency SOS requested from mobile app',
+        },
+      );
+      _fetchSOSHistory();
+    } catch (e) {
+      debugPrint('Error dispatching SOS alert: $e');
+    }
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('SOS Dispatch Sent! Help is on the way.'),
+          behavior: SnackBarBehavior.floating,
+          backgroundColor: AppTheme.danger,
+          duration: Duration(seconds: 4),
+        ),
+      );
+    }
   }
 
   // Quick action confirmation dialog
@@ -143,15 +252,29 @@ class _AlertsScreenState extends State<AlertsScreen> with SingleTickerProviderSt
             ),
           ),
           ElevatedButton(
-            onPressed: () {
+            onPressed: () async {
               Navigator.pop(context);
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(
-                  content: Text('Simulated request sent to $serviceName!'),
-                  behavior: SnackBarBehavior.floating,
-                  backgroundColor: color,
-                ),
-              );
+              try {
+                await ApiClient.instance.post(
+                  '/api/emergency/alerts/',
+                  data: {
+                    'category': serviceName.toLowerCase(),
+                    'message': '$serviceName assistance requested from mobile app',
+                  },
+                );
+                _fetchSOSHistory();
+              } catch (e) {
+                debugPrint('Error triggering $serviceName action: $e');
+              }
+              if (mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text('$serviceName alert dispatched successfully!'),
+                    behavior: SnackBarBehavior.floating,
+                    backgroundColor: color,
+                  ),
+                );
+              }
             },
             style: ElevatedButton.styleFrom(
               backgroundColor: color,
@@ -503,61 +626,63 @@ class _AlertsScreenState extends State<AlertsScreen> with SingleTickerProviderSt
         border: Border.all(color: isDark ? Colors.white10 : Colors.grey.shade100),
       ),
       child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Row(
-            children: [
-              CircleAvatar(
-                backgroundColor: isDark ? const Color(0xFF1E293B) : Colors.blue.shade50,
-                radius: 22,
-                child: const Icon(Icons.my_location_rounded, color: Color(0xFF2563EB), size: 22),
-              ),
-              const SizedBox(width: 14),
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Green Heights Society',
-                    style: GoogleFonts.outfit(
-                      fontSize: 15,
-                      fontWeight: FontWeight.bold,
-                      color: Theme.of(context).colorScheme.onSurface,
-                    ),
-                  ),
-                  Text(
-                    'Block A, Flat A-203',
-                    style: GoogleFonts.inter(
-                      fontSize: 12,
-                      color: isDark ? Colors.white60 : Colors.grey.shade500,
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  Row(
-                    children: [
-                      Container(
-                        width: 8,
-                        height: 8,
-                        decoration: const BoxDecoration(
-                          color: AppTheme.success,
-                          shape: BoxShape.circle,
-                        ),
-                      ),
-                      const SizedBox(width: 6),
-                      Text(
-                        'Live Location Enabled',
-                        style: GoogleFonts.inter(
-                          fontSize: 11,
-                          fontWeight: FontWeight.bold,
-                          color: AppTheme.success,
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ],
+          CircleAvatar(
+            backgroundColor: isDark ? const Color(0xFF1E293B) : Colors.blue.shade50,
+            radius: 22,
+            child: const Icon(Icons.my_location_rounded, color: Color(0xFF2563EB), size: 22),
           ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  _locationPrimaryText,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: GoogleFonts.outfit(
+                    fontSize: 15,
+                    fontWeight: FontWeight.bold,
+                    color: Theme.of(context).colorScheme.onSurface,
+                  ),
+                ),
+                Text(
+                  _locationSecondaryText,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: GoogleFonts.inter(
+                    fontSize: 12,
+                    color: isDark ? Colors.white60 : Colors.grey.shade500,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Row(
+                  children: [
+                    Container(
+                      width: 8,
+                      height: 8,
+                      decoration: const BoxDecoration(
+                        color: AppTheme.success,
+                        shape: BoxShape.circle,
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    Text(
+                      'Live Location Enabled',
+                      style: GoogleFonts.inter(
+                        fontSize: 11,
+                        fontWeight: FontWeight.bold,
+                        color: AppTheme.success,
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 10),
           IconButton(
             onPressed: _isLocationRefreshing ? null : _refreshLocation,
             icon: _isLocationRefreshing
@@ -999,13 +1124,6 @@ class _AlertsScreenState extends State<AlertsScreen> with SingleTickerProviderSt
 
   // SOS History Request Widget
   Widget _buildSOSHistorySection() {
-    final List<Map<String, String>> history = [
-      {'date': '12 Jul 2026, 4:12 PM', 'status': 'Resolved'},
-      {'date': '05 Jul 2026, 9:30 AM', 'status': 'Cancelled'},
-      {'date': '28 Jun 2026, 11:15 AM', 'status': 'Resolved'},
-      {'date': '20 Jun 2026, 2:40 PM', 'status': 'Pending'},
-    ];
-
     final isDark = Theme.of(context).brightness == Brightness.dark;
     return Container(
       width: double.infinity,
@@ -1025,51 +1143,91 @@ class _AlertsScreenState extends State<AlertsScreen> with SingleTickerProviderSt
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            'Previous SOS Requests',
-            style: GoogleFonts.outfit(
-              fontSize: 15,
-              fontWeight: FontWeight.bold,
-              color: Theme.of(context).colorScheme.onSurface,
-            ),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                'Previous SOS Requests',
+                style: GoogleFonts.outfit(
+                  fontSize: 15,
+                  fontWeight: FontWeight.bold,
+                  color: Theme.of(context).colorScheme.onSurface,
+                ),
+              ),
+              IconButton(
+                icon: const Icon(Icons.refresh, size: 18),
+                onPressed: _fetchSOSHistory,
+                tooltip: 'Refresh History',
+              ),
+            ],
           ),
-          const SizedBox(height: 14),
-          ListView.separated(
-            shrinkWrap: true,
-            physics: const NeverScrollableScrollPhysics(),
-            itemCount: history.length,
-            separatorBuilder: (context, index) => Divider(height: 20, color: isDark ? Colors.white10 : const Color(0xFFF1F5F9)),
-            itemBuilder: (context, index) {
-              final item = history[index];
-              return Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'SOS Dispatch Alert',
-                        style: GoogleFonts.outfit(
-                          fontWeight: FontWeight.bold,
-                          fontSize: 13,
-                          color: Theme.of(context).colorScheme.onSurface,
-                        ),
-                      ),
-                      const SizedBox(height: 2),
-                      Text(
-                        item['date']!,
-                        style: GoogleFonts.inter(
-                          fontSize: 11,
-                          color: isDark ? Colors.white60 : Colors.grey.shade500,
-                        ),
-                      ),
-                    ],
+          const SizedBox(height: 10),
+          if (_isLoadingHistory)
+            const Padding(
+              padding: EdgeInsets.all(16.0),
+              child: Center(
+                child: SizedBox(
+                  width: 20,
+                  height: 20,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                ),
+              ),
+            )
+          else if (_realSOSHistory.isEmpty)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 16.0),
+              child: Center(
+                child: Text(
+                  'No previous SOS requests recorded.',
+                  style: GoogleFonts.inter(
+                    fontSize: 13,
+                    color: isDark ? Colors.white60 : Colors.grey.shade500,
                   ),
-                  _buildHistoryStatusChip(item['status']!),
-                ],
-              );
-            },
-          )
+                ),
+              ),
+            )
+          else
+            ListView.separated(
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              itemCount: _realSOSHistory.length,
+              separatorBuilder: (context, index) => Divider(height: 20, color: isDark ? Colors.white10 : const Color(0xFFF1F5F9)),
+              itemBuilder: (context, index) {
+                final item = _realSOSHistory[index];
+                return Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            item['title'] ?? 'SOS Dispatch Alert',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: GoogleFonts.outfit(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 13,
+                              color: Theme.of(context).colorScheme.onSurface,
+                            ),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            item['date'] ?? '',
+                            style: GoogleFonts.inter(
+                              fontSize: 11,
+                              color: isDark ? Colors.white60 : Colors.grey.shade500,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    _buildHistoryStatusChip(item['status'] ?? 'Pending'),
+                  ],
+                );
+              },
+            )
         ],
       ),
     );

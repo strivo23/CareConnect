@@ -9,15 +9,23 @@ class SocietyRepository {
 
   Future<List<SocietyModel>> fetchSocieties({String? search}) async {
     final response = await _client.get('/api/society/societies/', queryParameters: search == null ? null : {'search': search});
-    final data = response.data as Map<String, dynamic>?;
-    final items = data?['results'] is List ? data!['results'] as List : response.data as List? ?? const [];
+    List items = [];
+    if (response.data is List) {
+      items = response.data as List;
+    } else if (response.data is Map && response.data['results'] is List) {
+      items = response.data['results'] as List;
+    }
     return items.map((item) => SocietyModel.fromJson(Map<String, dynamic>.from(item as Map))).toList();
   }
 
   Future<List<BlockTowerModel>> fetchBlocks(int societyId) async {
     final response = await _client.get('/api/society/blocks/', queryParameters: {'society': societyId});
-    final data = response.data as Map<String, dynamic>?;
-    final items = data?['results'] is List ? data!['results'] as List : response.data as List? ?? const [];
+    List items = [];
+    if (response.data is List) {
+      items = response.data as List;
+    } else if (response.data is Map && response.data['results'] is List) {
+      items = response.data['results'] as List;
+    }
     return items.map((item) => BlockTowerModel.fromJson(Map<String, dynamic>.from(item as Map))).toList();
   }
 
@@ -28,22 +36,34 @@ class SocietyRepository {
     if (occupied != null) params['occupied'] = occupied.toString();
 
     final response = await _client.get('/api/society/flats/', queryParameters: params.isEmpty ? null : params);
-    final data = response.data as Map<String, dynamic>?;
-    final items = data?['results'] is List ? data!['results'] as List : response.data as List? ?? const [];
+    List items = [];
+    if (response.data is List) {
+      items = response.data as List;
+    } else if (response.data is Map && response.data['results'] is List) {
+      items = response.data['results'] as List;
+    }
     return items.map((item) => FlatModel.fromJson(Map<String, dynamic>.from(item as Map))).toList();
   }
 
   Future<List<ResidentProfileModel>> fetchResidents({String? search}) async {
     final response = await _client.get('/api/accounts/residents/', queryParameters: search == null ? null : {'search': search});
-    final data = response.data as Map<String, dynamic>?;
-    final items = data?['results'] is List ? data!['results'] as List : response.data as List? ?? const [];
+    List items = [];
+    if (response.data is List) {
+      items = response.data as List;
+    } else if (response.data is Map && response.data['results'] is List) {
+      items = response.data['results'] as List;
+    }
     return items.map((item) => ResidentProfileModel.fromJson(Map<String, dynamic>.from(item as Map))).toList();
   }
 
   Future<ResidentProfileModel?> fetchResidentProfileByUserId(int userId) async {
     final response = await _client.get('/api/accounts/residents/', queryParameters: {'user': userId});
-    final data = response.data as Map<String, dynamic>?;
-    final items = data?['results'] is List ? data!['results'] as List : response.data as List? ?? const [];
+    List items = [];
+    if (response.data is List) {
+      items = response.data as List;
+    } else if (response.data is Map && response.data['results'] is List) {
+      items = response.data['results'] as List;
+    }
     if (items.isNotEmpty) {
       return ResidentProfileModel.fromJson(Map<String, dynamic>.from(items.first as Map));
     }
