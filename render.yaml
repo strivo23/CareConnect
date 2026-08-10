@@ -41,7 +41,6 @@ services:
   - type: web
     name: careconnect-admin-portal
     env: static
-    region: singapore
     plan: free
     rootDir: admin-portal
     buildCommand: "npm run build"
