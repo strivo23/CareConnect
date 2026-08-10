@@ -105,12 +105,12 @@ const Navbar = ({ onToggleSidebar, onRefresh }) => {
 
         <Box>
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
-            <Typography variant="h5" fontWeight="800" sx={{ letterSpacing: '-0.5px', background: 'linear-gradient(135deg, #FFFFFF 0%, #9CA3AF 100%)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>
+            <Typography variant="h5" fontWeight="800" sx={{ letterSpacing: '-0.5px', color: 'var(--text-primary)' }}>
               {getPageTitle()}
             </Typography>
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.8, px: 1.2, py: 0.3, borderRadius: '20px', backgroundColor: 'rgba(239, 68, 68, 0.15)', border: '1px solid rgba(239, 68, 68, 0.3)' }}>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.8, px: 1.2, py: 0.3, borderRadius: '20px', backgroundColor: 'var(--danger-subtle)', border: '1px solid rgba(233, 63, 65, 0.30)' }}>
               <span className="pulse-dot" />
-              <Typography variant="caption" fontWeight="700" sx={{ color: '#EF4444', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+              <Typography variant="caption" fontWeight="700" sx={{ color: 'var(--danger)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
                 LIVE SYSTEM
               </Typography>
             </Box>
@@ -128,7 +128,7 @@ const Navbar = ({ onToggleSidebar, onRefresh }) => {
           startIcon={<MdCalendarToday size={16} color="var(--primary)" />}
           sx={{
             display: { xs: 'none', sm: 'inline-flex' },
-            backgroundColor: 'rgba(255, 255, 255, 0.05)',
+            backgroundColor: 'var(--bg-surface)',
             color: 'var(--text-primary)',
             border: '1px solid var(--border-color)',
             borderRadius: '12px',
@@ -138,7 +138,7 @@ const Navbar = ({ onToggleSidebar, onRefresh }) => {
             fontWeight: 500,
             textTransform: 'none',
             '&:hover': {
-              backgroundColor: 'rgba(255, 255, 255, 0.08)',
+              backgroundColor: 'var(--primary-subtle)',
               borderColor: 'var(--border-light)'
             }
           }}
@@ -152,10 +152,10 @@ const Navbar = ({ onToggleSidebar, onRefresh }) => {
             onClick={handleRefreshClick}
             sx={{ 
               color: 'var(--text-primary)',
-              backgroundColor: 'rgba(255, 255, 255, 0.05)',
+              backgroundColor: 'var(--bg-surface)',
               borderRadius: '12px',
               border: '1px solid var(--border-color)',
-              '&:hover': { backgroundColor: 'rgba(255, 255, 255, 0.1)' }
+              '&:hover': { backgroundColor: 'var(--primary-subtle)' }
             }}
           >
             <MdRefresh 
@@ -174,10 +174,10 @@ const Navbar = ({ onToggleSidebar, onRefresh }) => {
             onClick={handleNotifOpen}
             sx={{ 
               color: 'var(--text-primary)',
-              backgroundColor: 'rgba(255, 255, 255, 0.05)',
+              backgroundColor: 'var(--bg-surface)',
               borderRadius: '12px',
               border: '1px solid var(--border-color)',
-              '&:hover': { backgroundColor: 'rgba(255, 255, 255, 0.1)' }
+              '&:hover': { backgroundColor: 'var(--primary-subtle)' }
             }}
           >
             <Badge badgeContent={3} color="error">
@@ -188,7 +188,7 @@ const Navbar = ({ onToggleSidebar, onRefresh }) => {
 
         {/* Dark Mode Toggle */}
         <Box sx={{
-          backgroundColor: 'rgba(255, 255, 255, 0.05)',
+          backgroundColor: 'var(--bg-surface)',
           borderRadius: '12px',
           border: '1px solid var(--border-color)',
           display: 'flex',
@@ -206,10 +206,10 @@ const Navbar = ({ onToggleSidebar, onRefresh }) => {
               p: 0.5,
               pr: 1.5,
               borderRadius: '14px',
-              backgroundColor: 'rgba(255, 255, 255, 0.05)',
+              backgroundColor: 'var(--bg-surface)',
               border: '1px solid var(--border-color)',
               textTransform: 'none',
-              '&:hover': { backgroundColor: 'rgba(255, 255, 255, 0.09)' }
+              '&:hover': { backgroundColor: 'var(--primary-subtle)' }
             }}
           >
             <Avatar 

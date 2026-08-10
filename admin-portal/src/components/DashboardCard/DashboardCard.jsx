@@ -17,6 +17,8 @@ const DashboardCard = ({
 }) => {
   const chartData = sparklineData.map((val, idx) => ({ idx, val }));
 
+  const safeId = title.replace(/[^a-zA-Z0-9]/g, '');
+
   return (
     <motion.div
       whileHover={{ y: -6, transition: { duration: 0.2 } }}
@@ -110,7 +112,7 @@ const DashboardCard = ({
             <ResponsiveContainer width="100%" height="100%">
               <AreaChart data={chartData} margin={{ top: 0, right: 0, left: 0, bottom: 0 }}>
                 <defs>
-                  <linearGradient id={`gradient-${title.replace(/\s+/g, '')}`} x1="0" y1="0" x2="0" y2="1">
+                  <linearGradient id={`gradient-${safeId}`} x1="0" y1="0" x2="0" y2="1">
                     <stop offset="0%" stopColor={color} stopOpacity={0.4} />
                     <stop offset="100%" stopColor={color} stopOpacity={0.0} />
                   </linearGradient>
@@ -121,7 +123,7 @@ const DashboardCard = ({
                   stroke={color} 
                   strokeWidth={2} 
                   fillOpacity={1} 
-                  fill={`url(#gradient-${title.replace(/\s+/g, '')})`} 
+                  fill={`url(#gradient-${safeId})`} 
                 />
               </AreaChart>
             </ResponsiveContainer>

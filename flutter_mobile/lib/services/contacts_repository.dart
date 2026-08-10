@@ -121,7 +121,14 @@ class ContactsRepository {
 
   Future<List<Map<String, dynamic>>> fetchResidentGuardians() async {
     final response = await _client.get('/api/resident/guardians/');
-    final items = response.data is List ? response.data as List : [];
+    List items = [];
+    if (response.data is List) {
+      items = response.data as List;
+    } else if (response.data is Map && response.data['guardians'] is List) {
+      items = response.data['guardians'] as List;
+    } else if (response.data is Map && response.data['results'] is List) {
+      items = response.data['results'] as List;
+    }
     return items.map((e) => Map<String, dynamic>.from(e as Map)).toList();
   }
 
@@ -139,13 +146,15 @@ class ContactsRepository {
     );
   }
 
-  Future<void> respondGuardianLink({required int linkId, required String action}) async {
-    await _client.post(
+  Future<Map<String, dynamic>> respondGuardianLink({required int linkId, required String action}) async {
+    final response = await _client.post(
       '/api/guardian/respond-link/',
       data: {'link_id': linkId, 'action': action},
     );
+    return Map<String, dynamic>.from(response.data as Map);
   }
 }
+
 
 
 

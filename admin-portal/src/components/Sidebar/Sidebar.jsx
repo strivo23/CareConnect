@@ -1,17 +1,17 @@
 import React, { useState } from 'react';
 import { NavLink } from 'react-router-dom';
-import { 
-  Box, 
-  List, 
-  ListItem, 
+import {
+  Box,
+  List,
+  ListItem,
   ListItemButton,
-  ListItemIcon, 
-  ListItemText, 
-  Typography, 
-  Divider, 
-  Avatar, 
-  Button, 
-  Drawer, 
+  ListItemIcon,
+  ListItemText,
+  Typography,
+  Divider,
+  Avatar,
+  Button,
+  Drawer,
   Tooltip,
   Chip,
   Dialog,
@@ -21,15 +21,20 @@ import {
   TextField,
   MenuItem
 } from '@mui/material';
-import { 
-  MdDashboard, 
-  MdWarning, 
-  MdNotificationsActive, 
-  MdNotifications, 
-  MdAltRoute, 
-  MdForum, 
-  MdAssessment, 
-  MdPeople, 
+import {
+  MdDashboard,
+  MdVerifiedUser,
+  MdLocationCity,
+  MdDomain,
+  MdMeetingRoom,
+  MdPeople,
+  MdVolunteerActivism,
+  MdSecurity,
+  MdWarning,
+  MdNotificationsActive,
+  MdNotifications,
+  MdAltRoute,
+  MdAssessment,
   MdSettings,
   MdCampaign,
   MdDownload,
@@ -40,11 +45,15 @@ import { FaHeartbeat } from 'react-icons/fa';
 
 const menuItems = [
   { text: 'Dashboard', icon: <MdDashboard size={22} />, path: '/dashboard' },
+  { text: 'Verification Center', icon: <MdVerifiedUser size={22} />, path: '/verification-center' },
+  { text: 'Societies', icon: <MdLocationCity size={22} />, path: '/society' },
+  { text: 'Blocks', icon: <MdDomain size={22} />, path: '/block' },
+  { text: 'Flats', icon: <MdMeetingRoom size={22} />, path: '/flat' },
+  { text: 'Residents', icon: <MdPeople size={22} />, path: '/residents' },
+  { text: 'Volunteers', icon: <MdVolunteerActivism size={22} />, path: '/volunteers' },
+  { text: 'Security Staff', icon: <MdSecurity size={22} />, path: '/security' },
   { text: 'Incidents', icon: <MdWarning size={22} />, path: '/emergency' },
   { text: 'Alerts', icon: <MdNotificationsActive size={22} />, path: '/alerts' },
-  { text: 'Notifications', icon: <MdNotifications size={22} />, path: '/notification-templates' },
-  { text: 'Escalations', icon: <MdAltRoute size={22} />, path: '/escalation-settings' },
-  { text: 'Responses', icon: <MdForum size={22} />, path: '/residents' },
   { text: 'Reports', icon: <MdAssessment size={22} />, path: '/reports' },
   { text: 'Users', icon: <MdPeople size={22} />, path: '/users' },
   { text: 'Settings', icon: <MdSettings size={22} />, path: '/settings' },
@@ -65,8 +74,6 @@ const SidebarContent = ({ collapsed, onClose }) => {
     }, 1500);
   };
 
-  const isPathActive = (path) => window.location.pathname.startsWith(path);
-
   const userStr = localStorage.getItem('user');
   const currentUser = userStr ? JSON.parse(userStr) : null;
   const userName = currentUser?.full_name || currentUser?.name || currentUser?.email || 'Super Admin';
@@ -85,10 +92,10 @@ const SidebarContent = ({ collapsed, onClose }) => {
       overflowX: 'hidden'
     }}>
       {/* Logo Area */}
-      <Box sx={{ 
-        p: 2.5, 
-        display: 'flex', 
-        alignItems: 'center', 
+      <Box sx={{
+        p: 2.5,
+        display: 'flex',
+        alignItems: 'center',
         justifyContent: collapsed ? 'center' : 'space-between',
         borderBottom: '1px solid var(--border-color)'
       }}>
@@ -120,55 +127,58 @@ const SidebarContent = ({ collapsed, onClose }) => {
 
       {/* Navigation List */}
       <List sx={{ flexGrow: 1, px: collapsed ? 1 : 2, py: 2 }}>
-        {menuItems.map((item) => {
-          const active = isPathActive(item.path);
-          return (
-            <ListItem 
-              key={item.text} 
-              disablePadding 
-              sx={{ mb: 0.5 }}
-            >
-              <Tooltip title={collapsed ? item.text : ''} placement="right">
-                <ListItemButton 
-                  component={NavLink} 
-                  to={item.path}
-                  onClick={onClose}
-                  sx={{
-                    borderRadius: '12px',
-                    py: 1.2,
-                    px: collapsed ? 1.5 : 2,
-                    justifyContent: collapsed ? 'center' : 'flex-start',
-                    backgroundColor: active ? 'var(--primary)' : 'transparent',
-                    color: active ? '#ffffff' : 'var(--text-secondary)',
-                    fontWeight: active ? 'bold' : 'normal',
-                    '&:hover': {
-                      backgroundColor: active ? 'var(--primary)' : 'rgba(255,255,255,0.05)',
-                      color: active ? '#ffffff' : 'var(--text-primary)',
-                    },
-                    transition: 'all 0.2s ease'
-                  }}
-                >
-                  <ListItemIcon sx={{ 
-                    minWidth: 0, 
-                    mr: collapsed ? 0 : 1.8, 
-                    color: active ? '#ffffff' : 'var(--text-secondary)' 
-                  }}>
-                    {item.icon}
-                  </ListItemIcon>
-                  {!collapsed && (
-                    <ListItemText 
-                      primary={item.text} 
-                      primaryTypographyProps={{ 
-                        fontSize: '0.9rem', 
-                        fontWeight: active ? 700 : 500 
-                      }} 
-                    />
-                  )}
-                </ListItemButton>
-              </Tooltip>
-            </ListItem>
-          );
-        })}
+        {menuItems.map((item) => (
+          <ListItem
+            key={item.text}
+            disablePadding
+            sx={{ mb: 0.5 }}
+          >
+            <Tooltip title={collapsed ? item.text : ''} placement="right">
+              <NavLink
+                to={item.path}
+                onClick={onClose}
+                style={{ textDecoration: 'none', color: 'inherit', width: '100%', display: 'block' }}
+              >
+                {({ isActive }) => (
+                  <ListItemButton
+                    sx={{
+                      borderRadius: '12px',
+                      py: 1.2,
+                      px: collapsed ? 1.5 : 2,
+                      justifyContent: collapsed ? 'center' : 'flex-start',
+                      backgroundColor: isActive ? 'var(--primary)' : 'transparent',
+                      color: isActive ? '#ffffff' : 'var(--text-secondary)',
+                      fontWeight: isActive ? 'bold' : 'normal',
+                      boxShadow: isActive ? '0 4px 12px rgba(233, 63, 65, 0.15)' : 'none',
+                      '&:hover': {
+                        backgroundColor: isActive ? 'var(--primary-hover)' : 'var(--primary-subtle)',
+                        color: isActive ? '#ffffff' : 'var(--primary)',
+                      },
+                      transition: 'all 0.2s ease'
+                    }}
+                  >
+                    <ListItemIcon sx={{
+                      minWidth: 0,
+                      mr: collapsed ? 0 : 1.8,
+                      color: isActive ? '#ffffff' : 'var(--text-secondary)'
+                    }}>
+                      {item.icon}
+                    </ListItemIcon>
+                    {!collapsed && (
+                      <ListItemText
+                        primary={item.text}
+                        primaryTypographyProps={{
+                          fontSize: '0.9rem',
+                          fontWeight: isActive ? 700 : 500
+                        }}
+                      />
+                    )}
+                  </ListItemButton>
+                )}
+              </NavLink>
+            </Tooltip>
+          </ListItem>
+        ))}
       </List>
 
       {/* Quick Actions & System Info */}
@@ -178,14 +188,14 @@ const SidebarContent = ({ collapsed, onClose }) => {
             Quick Actions
           </Typography>
 
-          <Button 
-            fullWidth 
-            variant="contained" 
+          <Button
+            fullWidth
+            variant="contained"
             color="primary"
             startIcon={<MdCampaign size={20} />}
             onClick={() => setBroadcastOpen(true)}
-            sx={{ 
-              mb: 1, 
+            sx={{
+              mb: 1,
               py: 1,
               borderRadius: '12px',
               textTransform: 'none',
@@ -196,12 +206,12 @@ const SidebarContent = ({ collapsed, onClose }) => {
             Broadcast Alert
           </Button>
 
-          <Button 
-            fullWidth 
+          <Button
+            fullWidth
             variant="outlined"
             startIcon={<MdDownload size={18} />}
-            sx={{ 
-              mb: 2, 
+            sx={{
+              mb: 2,
               py: 0.8,
               borderRadius: '12px',
               textTransform: 'none',
@@ -249,8 +259,8 @@ const SidebarContent = ({ collapsed, onClose }) => {
             gap: 1.5
           }}>
             <Box sx={{ position: 'relative' }}>
-              <Avatar 
-                alt={userName} 
+              <Avatar
+                alt={userName}
                 src="https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=150&q=80"
                 sx={{ width: 38, height: 38, border: '2px solid var(--primary)' }}
               />
@@ -281,8 +291,8 @@ const SidebarContent = ({ collapsed, onClose }) => {
       )}
 
       {/* Broadcast Dialog */}
-      <Dialog 
-        open={broadcastOpen} 
+      <Dialog
+        open={broadcastOpen}
         onClose={() => setBroadcastOpen(false)}
         PaperProps={{
           sx: {
@@ -346,12 +356,13 @@ const SidebarContent = ({ collapsed, onClose }) => {
             <Button onClick={() => setBroadcastOpen(false)} sx={{ color: 'var(--text-secondary)' }}>
               Cancel
             </Button>
-            <Button 
-              variant="contained" 
+            <Button
+              variant="contained"
               disabled={!broadcastMsg.trim()}
               onClick={handleSendBroadcast}
               sx={{
-                background: 'linear-gradient(135deg, #7C3AED 0%, #6D28D9 100%)',
+                background: 'linear-gradient(135deg, #E93F41 0%, #D92F32 100%)',
+                boxShadow: '0 4px 14px rgba(233, 63, 65, 0.3)',
                 borderRadius: '10px',
                 px: 3
               }}
@@ -381,9 +392,9 @@ const Sidebar = ({ collapsed = false, mobileOpen = false, onClose, width = 280 }
         ModalProps={{ keepMounted: true }}
         sx={{
           display: { xs: 'block', md: 'none' },
-          '& .MuiDrawer-paper': { 
-            boxSizing: 'border-box', 
-            width: 280, 
+          '& .MuiDrawer-paper': {
+            boxSizing: 'border-box',
+            width: 280,
             backgroundColor: 'var(--bg-sidebar)',
             borderRight: '1px solid var(--border-color)'
           },

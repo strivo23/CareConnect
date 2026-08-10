@@ -29,32 +29,32 @@ export const ThemeProvider = ({ children }) => {
     palette: {
       mode: themeMode,
       primary: {
-        main: '#7C3AED',
+        main: '#E93F41',
         contrastText: '#FFFFFF',
       },
       secondary: {
-        main: '#3B82F6',
+        main: '#2563EB',
       },
       success: {
-        main: '#22C55E',
+        main: themeMode === 'light' ? '#16A34A' : '#22C55E',
       },
       warning: {
-        main: '#F59E0B',
+        main: themeMode === 'light' ? '#D97706' : '#F59E0B',
       },
       error: {
-        main: '#EF4444',
+        main: '#E93F41',
       },
       background: {
-        default: themeMode === 'light' ? '#F4F6F9' : '#0B1020',
-        paper: themeMode === 'light' ? '#FFFFFF' : '#161F35',
+        default: themeMode === 'light' ? '#F5F7FB' : '#0B1220',
+        paper: themeMode === 'light' ? '#FFFFFF' : '#1A2437',
       },
       text: {
-        primary: themeMode === 'light' ? '#0F172A' : '#F9FAFB',
-        secondary: themeMode === 'light' ? '#475569' : '#9CA3AF',
+        primary: themeMode === 'light' ? '#0F172A' : '#F8FAFC',
+        secondary: themeMode === 'light' ? '#64748B' : '#94A3B8',
       },
     },
     typography: {
-      fontFamily: "'Inter', sans-serif",
+      fontFamily: "'Outfit', 'Inter', sans-serif",
     },
     shape: {
       borderRadius: 18,

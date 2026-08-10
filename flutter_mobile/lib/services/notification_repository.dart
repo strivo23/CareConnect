@@ -1,4 +1,6 @@
 import 'dart:convert';
+import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart';
 import '../core/constants/app_constants.dart';
 import '../core/services/api_client.dart';
 import '../core/services/local_storage_service.dart';
@@ -124,7 +126,15 @@ class NotificationRepository {
   Future<void> registerDeviceToken(String token) async {
     try {
       await _client.post('/api/notifications/devices/', data: {'token': token});
-    } catch (_) {}
+    } on DioException catch (e) {
+      if (e.response?.statusCode == 400) {
+        debugPrint('[NotificationRepository] Device token already registered on server.');
+      } else {
+        debugPrint('[NotificationRepository] DioException registering device token: ${e.message}');
+      }
+    } catch (e) {
+      debugPrint('[NotificationRepository] Error registering device token: $e');
+    }
   }
 
   Future<void> _cache(List<AppNotificationModel> notifications) async {

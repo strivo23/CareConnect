@@ -15,33 +15,37 @@ class RegisterAPIView(APIView):
         if serializer.is_valid():
             user = serializer.save()
             
-            # Generate registration OTP
-            import random
-            from django.utils import timezone
-            from .models import OTPVerification
-            otp = str(random.randint(100000, 999999))
-            expires_at = timezone.now() + timezone.timedelta(minutes=10)
-            OTPVerification.objects.create(
-                user=user,
-                otp=otp,
-                expires_at=expires_at
-            )
-            print(f"[MOCK OTP] Sent registration OTP {otp} to {user.email}", flush=True)
-
+            # Generate registration OTP & dispatch HTML verification email via SMTP
+            from .otp_service import OTPService
+            otp = OTPService.generate_otp_for_user(user)
+            email_sent, mail_msg = OTPService.send_otp_email(user.email, otp, user.full_name or "Resident")
             
             res_data = serializer.data
-            res_data["otp"] = otp  # Include OTP in response for testing/development flow convenience
+            res_data["success"] = True
+            res_data["message"] = "Registration successful. Verification OTP sent to your email." if email_sent else f"Registration successful. Email delivery notice: {mail_msg}"
+            res_data["otp"] = otp  # Included for development/testing convenience
+            res_data["email_sent"] = email_sent
             return Response(res_data, status=status.HTTP_201_CREATED)
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        return Response({"success": False, "message": "Validation error.", "errors": serializer.errors}, status=status.HTTP_400_BAD_REQUEST)
 
 
 class LoginAPIView(APIView):
     def post(self, request):
         serializer = LoginSerializer(data=request.data)
         if serializer.is_valid():
-            email = serializer.validated_data["email"]
+            raw_email = serializer.validated_data["email"]
             password = serializer.validated_data["password"]
-            user = authenticate(email=email, password=password)
+            clean_email = str(raw_email).strip().lower()
+
+            user = authenticate(email=clean_email, password=password)
+            if not user:
+                user = authenticate(username=clean_email, password=password)
+            if not user:
+                from accounts.models import User
+                db_user = User.objects.filter(email__iexact=clean_email).first()
+                if db_user and db_user.check_password(password) and db_user.is_active:
+                    user = db_user
+
             if user:
                 refresh = RefreshToken.for_user(user)
                 return Response({
@@ -50,8 +54,23 @@ class LoginAPIView(APIView):
                     "access": str(refresh.access_token),
                     "user": UserSerializer(user).data
                     }, status=status.HTTP_200_OK)
-            return Response({"message": "Invalid credentials"}, status=status.HTTP_401_UNAUTHORIZED)
+            return Response({"message": "Invalid email or password"}, status=status.HTTP_401_UNAUTHORIZED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+class LogoutAPIView(APIView):
+    """
+    Logout API endpoint. Accepts optional 'refresh' token and invalidates it.
+    """
+    def post(self, request):
+        try:
+            refresh_token = request.data.get("refresh")
+            if refresh_token:
+                token = RefreshToken(refresh_token)
+                token.blacklist()
+            return Response({"message": "Logout successful"}, status=status.HTTP_205_RESET_CONTENT)
+        except Exception:
+            return Response({"message": "Logged out successfully from client session"}, status=status.HTTP_200_OK)
 
 
 import threading
@@ -281,32 +300,22 @@ class SendOTPAPIView(APIView):
     def post(self, request):
         email = request.data.get('email')
         if not email:
-            return Response({"email": "Email is required."}, status=status.HTTP_400_BAD_REQUEST)
+            return Response({"success": False, "message": "Email is required.", "email": "Email is required."}, status=status.HTTP_400_BAD_REQUEST)
         
         clean_email = str(email).strip().lower()
         from accounts.models import User
         user = User.objects.filter(email__iexact=clean_email).first()
         if not user:
-            return Response({"detail": "User not found."}, status=status.HTTP_404_NOT_FOUND)
+            return Response({"success": False, "message": "User not found.", "detail": "User not found."}, status=status.HTTP_404_NOT_FOUND)
         
-        import random
-        from django.utils import timezone
-        from .models import OTPVerification
-        
-        otp = str(random.randint(100000, 999999))
-        expires_at = timezone.now() + timezone.timedelta(minutes=10)
-        OTPVerification.objects.create(
-            user=user,
-            otp=otp,
-            expires_at=expires_at
-        )
-        
-        subject = "CareConnect - Your Account Verification OTP"
-        message = f"Hello,\n\nYour 6-digit OTP code is: {otp}\n\nValid for 10 minutes."
-        _send_email_in_background(subject, message, [clean_email])
-            
-        print(f"[OTP LOG] Generated OTP {otp} for {clean_email}", flush=True)
-        return Response({"message": "OTP sent successfully.", "otp": otp}, status=status.HTTP_200_OK)
+        from .otp_service import OTPService
+        otp = OTPService.generate_otp_for_user(user)
+        email_sent, mail_msg = OTPService.send_otp_email(user.email, otp, user.full_name or "Resident")
+
+        if not email_sent:
+            return Response({"success": False, "message": mail_msg, "detail": mail_msg, "otp": otp}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+        return Response({"success": True, "message": "OTP sent successfully.", "otp": otp}, status=status.HTTP_200_OK)
 
 
 class VerifyOTPAPIView(APIView):
@@ -316,44 +325,15 @@ class VerifyOTPAPIView(APIView):
         email = request.data.get('email')
         otp = request.data.get('otp')
         if not email or not otp:
-            return Response({"detail": "Email and OTP are required."}, status=status.HTTP_400_BAD_REQUEST)
-        
-        clean_email = str(email).strip().lower()
-        clean_otp = str(otp).strip()
+            return Response({"success": False, "message": "Email and OTP are required.", "detail": "Email and OTP are required."}, status=status.HTTP_400_BAD_REQUEST)
 
-        from accounts.models import User
-        user = User.objects.filter(email__iexact=clean_email).first()
-        if not user:
-            return Response({"detail": "User not found."}, status=status.HTTP_404_NOT_FOUND)
-        
-        # Universal demo fallback for easy testing
-        if clean_otp == '123456':
-            user.is_verified = True
-            user.save()
-            return Response({"message": "Verification successful.", "is_verified": True}, status=status.HTTP_200_OK)
+        from .otp_service import OTPService
+        success, message = OTPService.verify_otp(str(email), str(otp))
 
-        from django.utils import timezone
-        from .models import OTPVerification
-        
-        otp_record = OTPVerification.objects.filter(
-            user=user, 
-            is_verified=False,
-            otp=clean_otp
-        ).order_by('-created_at').first()
-        
-        if not otp_record:
-            return Response({"detail": "Invalid OTP."}, status=status.HTTP_400_BAD_REQUEST)
-        
-        if timezone.now() > otp_record.expires_at:
-            return Response({"detail": "OTP has expired."}, status=status.HTTP_400_BAD_REQUEST)
-        
-        otp_record.is_verified = True
-        otp_record.save()
-        
-        user.is_verified = True
-        user.save()
-        
-        return Response({"message": "Verification successful.", "is_verified": True}, status=status.HTTP_200_OK)
+        if not success:
+            return Response({"success": False, "message": message, "detail": message}, status=status.HTTP_400_BAD_REQUEST)
+
+        return Response({"success": True, "message": message, "is_verified": True}, status=status.HTTP_200_OK)
 
 
 class ResendOTPAPIView(APIView):
@@ -362,29 +342,438 @@ class ResendOTPAPIView(APIView):
     def post(self, request):
         email = request.data.get('email')
         if not email:
-            return Response({"email": "Email is required."}, status=status.HTTP_400_BAD_REQUEST)
-        
-        clean_email = str(email).strip().lower()
-        from accounts.models import User
-        user = User.objects.filter(email__iexact=clean_email).first()
-        if not user:
-            return Response({"detail": "User not found."}, status=status.HTTP_404_NOT_FOUND)
-        
-        import random
-        from django.utils import timezone
-        from .models import OTPVerification
-        
-        otp = str(random.randint(100000, 999999))
-        expires_at = timezone.now() + timezone.timedelta(minutes=10)
-        OTPVerification.objects.create(
-            user=user,
-            otp=otp,
-            expires_at=expires_at
-        )
-        
-        subject = "CareConnect - Your Resent Verification OTP"
-        message = f"Hello,\n\nYour new 6-digit OTP code is: {otp}\n\nValid for 10 minutes."
-        _send_email_in_background(subject, message, [clean_email])
+            return Response({"success": False, "message": "Email is required.", "email": "Email is required."}, status=status.HTTP_400_BAD_REQUEST)
 
-        print(f"[OTP LOG] Resent OTP {otp} for {clean_email}", flush=True)
-        return Response({"message": "OTP resent successfully.", "otp": otp}, status=status.HTTP_200_OK)
+        from .otp_service import OTPService
+        success, message, new_otp = OTPService.resend_otp(str(email))
+
+        if not success:
+            return Response({"success": False, "message": message, "detail": message}, status=status.HTTP_400_BAD_REQUEST)
+
+        return Response({"success": True, "message": message, "otp": new_otp}, status=status.HTTP_200_OK)
+
+
+from .models import VolunteerProfile, SecurityProfile, GuardianProfile, UserDocument
+from .serializers import VolunteerProfileSerializer, SecurityProfileSerializer, GuardianProfileSerializer, UserDocumentSerializer
+from notifications.services import NotificationEngineService
+
+class VolunteerProfileViewSet(viewsets.ModelViewSet):
+    queryset = VolunteerProfile.objects.all()
+    serializer_class = VolunteerProfileSerializer
+    permission_classes = [permissions.IsAuthenticated]
+    filter_backends = [filters.SearchFilter, filters.OrderingFilter]
+    search_fields = ['user__email', 'user__full_name', 'skills', 'emergency_training', 'assigned_society__name']
+    ordering_fields = ['id', 'status', 'created_at']
+    ordering = ['-id']
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        status_param = self.request.query_params.get('status')
+        society_param = self.request.query_params.get('society')
+        if status_param:
+            qs = qs.filter(status=status_param)
+        if society_param:
+            qs = qs.filter(assigned_society_id=society_param)
+        return qs
+
+    @action(detail=True, methods=['post'])
+    def verify(self, request, pk=None):
+        profile = self.get_object()
+        action_type = request.data.get("action", "approve").lower() # approve, reject, suspend
+        remarks = request.data.get("remarks", "")
+
+        if action_type == "approve":
+            profile.status = "Approved"
+            msg = "Volunteer approved successfully."
+        elif action_type == "reject":
+            profile.status = "Rejected"
+            msg = "Volunteer rejected."
+        elif action_type == "suspend":
+            profile.status = "Suspended"
+            msg = "Volunteer profile suspended."
+        else:
+            profile.status = "Pending"
+            msg = "Volunteer status reset to pending."
+
+        profile.verified_by = request.user
+        profile.verification_date = timezone.now()
+        profile.remarks = remarks
+        profile.save()
+
+        # Send multi-channel notification
+        NotificationEngineService.dispatch_notification(
+            user=profile.user,
+            title=f"Volunteer Profile {profile.status}",
+            message=f"Your volunteer application has been updated to '{profile.status}'. {remarks}".strip(),
+            category="general",
+            priority="HIGH",
+            channels=['IN_APP', 'FCM', 'SMS']
+        )
+        if profile.user.email:
+            NotificationEngineService.send_email(
+                to_email=profile.user.email,
+                subject=f"CareConnect — Volunteer Status: {profile.status}",
+                message=f"Hello {profile.user.full_name},\n\nYour Volunteer account status is now: {profile.status}.\nRemarks: {remarks}\n\nThank you,\nCareConnect Team"
+            )
+
+        return Response({"message": msg, "status": profile.status})
+
+    @action(detail=True, methods=['post'])
+    def assign(self, request, pk=None):
+        profile = self.get_object()
+        society_id = request.data.get("society")
+        block_id = request.data.get("block")
+
+        from society.models import Society, BlockTower
+        if society_id:
+            profile.assigned_society = Society.objects.filter(id=society_id).first()
+        if block_id:
+            profile.assigned_block = BlockTower.objects.filter(id=block_id).first()
+        profile.save()
+
+        return Response({"message": "Volunteer assigned to society/block successfully."})
+
+
+class SecurityProfileViewSet(viewsets.ModelViewSet):
+    queryset = SecurityProfile.objects.all()
+    serializer_class = SecurityProfileSerializer
+    permission_classes = [permissions.IsAuthenticated]
+    filter_backends = [filters.SearchFilter, filters.OrderingFilter]
+    search_fields = ['user__email', 'user__full_name', 'employee_id', 'shift', 'assigned_society__name']
+    ordering_fields = ['id', 'verification_status', 'employment_status', 'created_at']
+    ordering = ['-id']
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        status_param = self.request.query_params.get('verification_status') or self.request.query_params.get('status')
+        society_param = self.request.query_params.get('society')
+        if status_param:
+            qs = qs.filter(verification_status=status_param)
+        if society_param:
+            qs = qs.filter(assigned_society_id=society_param)
+        return qs
+
+    @action(detail=True, methods=['post'])
+    def verify(self, request, pk=None):
+        profile = self.get_object()
+        action_type = request.data.get("action", "approve").lower()
+        remarks = request.data.get("remarks", "")
+
+        if action_type == "approve":
+            profile.verification_status = "Approved"
+            msg = "Security staff verified & approved."
+        elif action_type == "reject":
+            profile.verification_status = "Rejected"
+            msg = "Security staff application rejected."
+        else:
+            profile.verification_status = "Pending"
+            msg = "Security status reset to pending."
+
+        profile.verified_by = request.user
+        profile.verification_date = timezone.now()
+        profile.remarks = remarks
+        profile.save()
+
+        # Send multi-channel notification
+        NotificationEngineService.dispatch_notification(
+            user=profile.user,
+            title=f"Security Profile {profile.verification_status}",
+            message=f"Your security staff profile verification status is: {profile.verification_status}.",
+            category="general",
+            priority="HIGH",
+            channels=['IN_APP', 'FCM', 'SMS']
+        )
+
+        return Response({"message": msg, "verification_status": profile.verification_status})
+
+
+class GuardianProfileViewSet(viewsets.ModelViewSet):
+    queryset = GuardianProfile.objects.all()
+    serializer_class = GuardianProfileSerializer
+    permission_classes = [permissions.IsAuthenticated]
+    filter_backends = [filters.SearchFilter, filters.OrderingFilter]
+    search_fields = ['user__email', 'user__full_name', 'guardian_code', 'phone_number']
+    ordering_fields = ['id', 'verification_status']
+    ordering = ['-id']
+
+    @action(detail=True, methods=['post'])
+    def verify(self, request, pk=None):
+        profile = self.get_object()
+        action_type = request.data.get("action", "approve").lower()
+        remarks = request.data.get("remarks", "")
+
+        if action_type == "approve":
+            profile.verification_status = "Approved"
+        elif action_type == "reject":
+            profile.verification_status = "Rejected"
+        else:
+            profile.verification_status = "Pending"
+
+        profile.verified_by = request.user
+        profile.verification_date = timezone.now()
+        profile.remarks = remarks
+        profile.save()
+
+        return Response({"message": f"Guardian verification status updated to {profile.verification_status}."})
+
+
+class UserDocumentViewSet(viewsets.ModelViewSet):
+    queryset = UserDocument.objects.all()
+    serializer_class = UserDocumentSerializer
+    permission_classes = [permissions.IsAuthenticated]
+    filter_backends = [filters.SearchFilter, filters.OrderingFilter]
+    search_fields = ['user__email', 'user__full_name', 'document_type', 'title']
+    ordering_fields = ['uploaded_at', 'status']
+    ordering = ['-uploaded_at']
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        user_param = self.request.query_params.get('user')
+        doc_type = self.request.query_params.get('type')
+        if user_param:
+            qs = qs.filter(user_id=user_param)
+        if doc_type:
+            qs = qs.filter(document_type=doc_type)
+        return qs
+
+
+class VerificationCenterAPIView(APIView):
+    """
+    GET /api/accounts/verification-center/
+    Unified API for User Verification Center.
+    Returns categorized lists of Residents, Guardians, Volunteers, and Security profiles with document attachments.
+    """
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        status_filter = request.query_params.get("status")
+
+        res_qs = ResidentProfile.objects.select_related("user", "society", "block", "flat").all()
+        vol_qs = VolunteerProfile.objects.select_related("user", "assigned_society", "assigned_block").all()
+        sec_qs = SecurityProfile.objects.select_related("user", "assigned_society", "assigned_block").all()
+        grd_qs = GuardianProfile.objects.select_related("user", "relationship").all()
+
+        if status_filter:
+            res_qs = res_qs.filter(status=status_filter)
+            vol_qs = vol_qs.filter(status=status_filter)
+            sec_qs = sec_qs.filter(verification_status=status_filter)
+            grd_qs = grd_qs.filter(verification_status=status_filter)
+
+        return Response({
+            "residents": ResidentProfileSerializer(res_qs, many=True).data,
+            "volunteers": VolunteerProfileSerializer(vol_qs, many=True).data,
+            "security": SecurityProfileSerializer(sec_qs, many=True).data,
+            "guardians": GuardianProfileSerializer(grd_qs, many=True).data,
+        }, status=status.HTTP_200_OK)
+
+
+class VolunteerAvailabilityAPIView(APIView):
+    """
+    GET /api/accounts/volunteer/availability/
+    PUT/PATCH /api/accounts/volunteer/availability/
+    Updates or retrieves volunteer availability status (ONLINE, OFFLINE, BUSY, UNAVAILABLE), location, and visibility radius.
+    """
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        user = request.user
+        try:
+            profile = VolunteerProfile.objects.get(user=user)
+        except VolunteerProfile.DoesNotExist:
+            return Response({"detail": "Volunteer profile not found."}, status=status.HTTP_404_NOT_FOUND)
+
+        return Response({
+            "is_online": profile.is_online,
+            "availability_status": profile.availability_status,
+            "latitude": profile.latitude,
+            "longitude": profile.longitude,
+            "visibility_radius": profile.visibility_radius,
+            "last_updated": profile.last_updated,
+        }, status=status.HTTP_200_OK)
+
+    def put(self, request):
+        return self.patch(request)
+
+    def patch(self, request):
+        user = request.user
+        try:
+            profile, _ = VolunteerProfile.objects.get_or_create(user=user)
+        except Exception as e:
+            return Response({"detail": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+        data = request.data
+        if "availability_status" in data:
+            status_val = str(data["availability_status"]).upper()
+            if status_val in ["ONLINE", "OFFLINE", "BUSY", "UNAVAILABLE"]:
+                profile.availability_status = status_val
+                profile.is_online = (status_val == "ONLINE")
+
+        if "is_online" in data:
+            profile.is_online = bool(data["is_online"])
+            if not profile.is_online and profile.availability_status == "ONLINE":
+                profile.availability_status = "OFFLINE"
+            elif profile.is_online and profile.availability_status == "OFFLINE":
+                profile.availability_status = "ONLINE"
+
+        if "latitude" in data and data["latitude"] is not None:
+            profile.latitude = data["latitude"]
+        if "longitude" in data and data["longitude"] is not None:
+            profile.longitude = data["longitude"]
+        if "visibility_radius" in data and data["visibility_radius"] is not None:
+            profile.visibility_radius = float(data["visibility_radius"])
+
+        profile.save()
+        return Response({
+            "message": f"Volunteer availability updated to {profile.availability_status}.",
+            "is_online": profile.is_online,
+            "availability_status": profile.availability_status,
+            "latitude": profile.latitude,
+            "longitude": profile.longitude,
+            "visibility_radius": profile.visibility_radius,
+            "last_updated": profile.last_updated,
+        }, status=status.HTTP_200_OK)
+
+
+class SecurityAvailabilityAPIView(APIView):
+    """
+    GET /api/accounts/security/availability/
+    PUT/PATCH /api/accounts/security/availability/
+    Updates or retrieves security duty status (AVAILABLE, ON_DUTY, BUSY, RESPONDING, OFFLINE) and current incident.
+    """
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        user = request.user
+        try:
+            profile = SecurityProfile.objects.get(user=user)
+        except SecurityProfile.DoesNotExist:
+            return Response({"detail": "Security profile not found."}, status=status.HTTP_404_NOT_FOUND)
+
+        return Response({
+            "is_on_duty": profile.is_on_duty,
+            "duty_status": profile.duty_status,
+            "latitude": profile.latitude,
+            "longitude": profile.longitude,
+            "current_incident": profile.current_incident_id,
+            "last_updated": profile.last_updated,
+        }, status=status.HTTP_200_OK)
+
+    def put(self, request):
+        return self.patch(request)
+
+    def patch(self, request):
+        user = request.user
+        try:
+            profile, _ = SecurityProfile.objects.get_or_create(user=user)
+        except Exception as e:
+            return Response({"detail": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+        data = request.data
+        if "duty_status" in data:
+            status_val = str(data["duty_status"]).upper()
+            if status_val in ["AVAILABLE", "ON_DUTY", "BUSY", "RESPONDING", "OFFLINE"]:
+                profile.duty_status = status_val
+                profile.is_on_duty = (status_val in ["AVAILABLE", "ON_DUTY", "RESPONDING"])
+
+        if "is_on_duty" in data:
+            profile.is_on_duty = bool(data["is_on_duty"])
+            if not profile.is_on_duty:
+                profile.duty_status = "OFFLINE"
+            elif profile.duty_status == "OFFLINE":
+                profile.duty_status = "AVAILABLE"
+
+        if "latitude" in data and data["latitude"] is not None:
+            profile.latitude = data["latitude"]
+        if "longitude" in data and data["longitude"] is not None:
+            profile.longitude = data["longitude"]
+        if "current_incident" in data:
+            profile.current_incident_id = data["current_incident"]
+
+        profile.save()
+        return Response({
+            "message": f"Security status updated to {profile.duty_status}.",
+            "is_on_duty": profile.is_on_duty,
+            "duty_status": profile.duty_status,
+            "latitude": profile.latitude,
+            "longitude": profile.longitude,
+            "current_incident": profile.current_incident_id,
+            "last_updated": profile.last_updated,
+        }, status=status.HTTP_200_OK)
+
+
+class ForgotPasswordAPIView(APIView):
+    permission_classes = []
+
+    def post(self, request):
+        from .serializers import ForgotPasswordSerializer
+        from .otp_service import PasswordResetOTPService
+
+        serializer = ForgotPasswordSerializer(data=request.data)
+        if not serializer.is_valid():
+            return Response({"success": False, "message": "Invalid email address format.", "errors": serializer.errors}, status=status.HTTP_400_BAD_REQUEST)
+
+        email = serializer.validated_data["email"]
+        sent, msg, raw_otp = PasswordResetOTPService.generate_reset_otp(email)
+
+        res_payload = {
+            "success": True,
+            "message": msg,
+        }
+        if raw_otp:
+            res_payload["otp"] = raw_otp  # Included for dev/testing convenience
+
+        return Response(res_payload, status=status.HTTP_200_OK)
+
+
+class VerifyResetOTPAPIView(APIView):
+    permission_classes = []
+
+    def post(self, request):
+        from .serializers import VerifyResetOTPSerializer
+        from .otp_service import PasswordResetOTPService
+
+        serializer = VerifyResetOTPSerializer(data=request.data)
+        if not serializer.is_valid():
+            return Response({"success": False, "message": "Email and 6-digit verification code are required.", "errors": serializer.errors}, status=status.HTTP_400_BAD_REQUEST)
+
+        email = serializer.validated_data["email"]
+        otp = serializer.validated_data["otp"]
+
+        success, msg, reset_token = PasswordResetOTPService.verify_reset_otp(email, otp)
+        if not success:
+            return Response({"success": False, "message": msg}, status=status.HTTP_400_BAD_REQUEST)
+
+        return Response({
+            "success": True,
+            "message": msg,
+            "reset_token": reset_token
+        }, status=status.HTTP_200_OK)
+
+
+class ResetPasswordAPIView(APIView):
+    permission_classes = []
+
+    def post(self, request):
+        from .serializers import ResetPasswordSerializer
+        from .otp_service import PasswordResetOTPService
+
+        serializer = ResetPasswordSerializer(data=request.data)
+        if not serializer.is_valid():
+            errors = serializer.errors
+            err_msg = "Validation failed."
+            if "confirm_password" in errors:
+                err_msg = errors["confirm_password"][0] if isinstance(errors["confirm_password"], list) else str(errors["confirm_password"])
+            elif "new_password" in errors:
+                err_msg = errors["new_password"][0] if isinstance(errors["new_password"], list) else str(errors["new_password"])
+
+            return Response({"success": False, "message": err_msg, "errors": errors}, status=status.HTTP_400_BAD_REQUEST)
+
+        reset_token = serializer.validated_data["reset_token"]
+        new_password = serializer.validated_data["new_password"]
+
+        success, msg = PasswordResetOTPService.reset_password(reset_token, new_password)
+        if not success:
+            return Response({"success": False, "message": msg}, status=status.HTTP_400_BAD_REQUEST)
+
+        return Response({"success": True, "message": msg}, status=status.HTTP_200_OK)
+

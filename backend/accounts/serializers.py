@@ -147,28 +147,99 @@ class UserSerializer(serializers.ModelSerializer):
         model = User
         fields = ['id', 'email', 'full_name', 'phone_number', 'role']
 
-from .models import ResidentProfile
+from .models import ResidentProfile, VolunteerProfile, SecurityProfile, GuardianProfile, UserDocument
+
+class UserDocumentSerializer(serializers.ModelSerializer):
+    user_name = serializers.ReadOnlyField(source='user.full_name')
+    user_email = serializers.ReadOnlyField(source='user.email')
+    user_role = serializers.ReadOnlyField(source='user.role')
+
+    class Meta:
+        model = UserDocument
+        fields = '__all__'
+
 
 class ResidentProfileSerializer(serializers.ModelSerializer):
     user = UserSerializer(read_only=True)
-    society_name = serializers.ReadOnlyField(source='society.name')
-    block_name = serializers.ReadOnlyField(source='block.name')
-    flat_number = serializers.ReadOnlyField(source='flat.flat_number')
-    approved_by_name = serializers.ReadOnlyField(source='approved_by.full_name')
+    society_name = serializers.ReadOnlyField(source='society.name', default='')
+    block_name = serializers.ReadOnlyField(source='block.name', default='')
+    flat_number = serializers.ReadOnlyField(source='flat.flat_number', default='')
+    approved_by_name = serializers.ReadOnlyField(source='approved_by.full_name', default='')
+    verified_by_name = serializers.ReadOnlyField(source='verified_by.full_name', default='')
 
     class Meta:
         model = ResidentProfile
         fields = '__all__'
 
 
-from .models import VolunteerProfile
-
 class VolunteerProfileSerializer(serializers.ModelSerializer):
     user = UserSerializer(read_only=True)
+    society_name = serializers.ReadOnlyField(source='assigned_society.name', default='')
+    block_name = serializers.ReadOnlyField(source='assigned_block.name', default='')
+    verified_by_name = serializers.ReadOnlyField(source='verified_by.full_name', default='')
 
     class Meta:
         model = VolunteerProfile
         fields = '__all__'
+
+
+class SecurityProfileSerializer(serializers.ModelSerializer):
+    user = UserSerializer(read_only=True)
+    society_name = serializers.ReadOnlyField(source='assigned_society.name', default='')
+    block_name = serializers.ReadOnlyField(source='assigned_block.name', default='')
+    verified_by_name = serializers.ReadOnlyField(source='verified_by.full_name', default='')
+
+    class Meta:
+        model = SecurityProfile
+        fields = '__all__'
+
+
+class GuardianProfileSerializer(serializers.ModelSerializer):
+    user = UserSerializer(read_only=True)
+    relationship_name = serializers.ReadOnlyField(source='relationship.name', default='')
+    verified_by_name = serializers.ReadOnlyField(source='verified_by.full_name', default='')
+
+    class Meta:
+        model = GuardianProfile
+        fields = '__all__'
+
+
+class ForgotPasswordSerializer(serializers.Serializer):
+    email = serializers.EmailField(required=True)
+
+    def validate_email(self, value):
+        return value.strip().lower()
+
+
+class VerifyResetOTPSerializer(serializers.Serializer):
+    email = serializers.EmailField(required=True)
+    otp = serializers.CharField(required=True, max_length=6, min_length=6)
+
+    def validate_email(self, value):
+        return value.strip().lower()
+
+    def validate_otp(self, value):
+        return value.strip()
+
+
+class ResetPasswordSerializer(serializers.Serializer):
+    reset_token = serializers.CharField(required=True)
+    new_password = serializers.CharField(required=True, min_length=8)
+    confirm_password = serializers.CharField(required=True, min_length=8)
+
+    def validate(self, attrs):
+        new_password = attrs.get('new_password')
+        confirm_password = attrs.get('confirm_password')
+
+        if new_password != confirm_password:
+            raise serializers.ValidationError({"confirm_password": "New password and confirmation password do not match."})
+
+        if len(new_password) < 8:
+            raise serializers.ValidationError({"new_password": "Password must be at least 8 characters long."})
+
+        return attrs
+
+
 
 
         

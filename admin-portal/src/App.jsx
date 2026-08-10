@@ -4,12 +4,16 @@ import Layout from './layouts/Layout';
 
 // Pages
 import Login from './pages/Login';
+import ForgotPassword from './pages/ForgotPassword';
 import CreateSuperuser from './pages/CreateSuperuser';
 import Dashboard from './pages/Dashboard';
 import Society from './pages/Society';
 import Block from './pages/Block';
 import Flat from './pages/Flat';
 import Residents from './pages/Residents';
+import VerificationCenter from './pages/VerificationCenter';
+import Volunteers from './pages/Volunteers';
+import Security from './pages/Security';
 import Users from './pages/Users';
 import Alerts from './pages/Alerts';
 import Reports from './pages/Reports';
@@ -23,16 +27,20 @@ const App = () => {
     <BrowserRouter>
       <Routes>
         <Route path="/login" element={<Login />} />
+        <Route path="/forgot-password" element={<ForgotPassword />} />
         <Route path="/create-superuser" element={<CreateSuperuser />} />
         
         {/* Protected Routes wrapped in Layout */}
         <Route path="/" element={<Layout />}>
           <Route index element={<Navigate to="/dashboard" replace />} />
           <Route path="dashboard" element={<Dashboard />} />
+          <Route path="verification-center" element={<VerificationCenter />} />
           <Route path="society" element={<Society />} />
           <Route path="block" element={<Block />} />
           <Route path="flat" element={<Flat />} />
           <Route path="residents" element={<Residents />} />
+          <Route path="volunteers" element={<Volunteers />} />
+          <Route path="security" element={<Security />} />
           <Route path="emergency" element={<Emergency />} />
           <Route path="users" element={<Users />} />
           <Route path="alerts" element={<Alerts />} />
@@ -47,4 +55,3 @@ const App = () => {
 };
 
 export default App;
-

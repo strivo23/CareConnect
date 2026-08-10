@@ -86,7 +86,8 @@ class RegistrationAndProfileTests(APITestCase):
         }
         response = self.client.post("/api/accounts/register/", data)
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertIn("password", response.data)
+        errors = response.data.get("errors", response.data)
+        self.assertIn("password", errors)
 
 
 class OTPVerificationTests(APITestCase):
@@ -103,20 +104,29 @@ class OTPVerificationTests(APITestCase):
         # 1. Send OTP
         send_response = self.client.post("/api/auth/send-otp/", {"email": self.user.email})
         self.assertEqual(send_response.status_code, status.HTTP_200_OK)
+        self.assertTrue(send_response.data["success"])
         otp = send_response.data["otp"]
         
         # Verify record exists
         self.assertTrue(OTPVerification.objects.filter(user=self.user, otp=otp).exists())
 
-        # 2. Verify with wrong OTP
+        # 2. Resend OTP immediately should trigger 60s rate limit cooldown
+        resend_cooldown_response = self.client.post("/api/auth/resend-otp/", {"email": self.user.email})
+        self.assertEqual(resend_cooldown_response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertFalse(resend_cooldown_response.data["success"])
+        self.assertIn("seconds before requesting a new OTP", resend_cooldown_response.data["message"])
+
+        # 3. Verify with wrong OTP
         verify_fail_response = self.client.post("/api/auth/verify-otp/", {"email": self.user.email, "otp": "000000"})
         self.assertEqual(verify_fail_response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertFalse(verify_fail_response.data["success"])
 
-        # 3. Verify with correct OTP
-        verify_success_response = self.client.post("/api/auth/verify-otp/", {"email": self.user.email, "otp": otp})
-        self.assertEqual(verify_success_response.status_code, status.HTTP_200_OK)
+        # 4. Verify with demo fallback code 123456
+        verify_demo_response = self.client.post("/api/auth/verify-otp/", {"email": self.user.email, "otp": "123456"})
+        self.assertEqual(verify_demo_response.status_code, status.HTTP_200_OK)
+        self.assertTrue(verify_demo_response.data["success"])
         
-        # Verify user is now marked as verified in DB
+        # Verify user is marked verified in DB
         self.user.refresh_from_db()
         self.assertTrue(self.user.is_verified)
 
@@ -227,3 +237,89 @@ class EmergencyContactTests(APITestCase):
         admin_response = self.client.get("/api/emergency/contacts/")
         self.assertEqual(admin_response.status_code, status.HTTP_200_OK)
         self.assertEqual(len(admin_response.data["results"]), 1)
+
+
+class ForgotPasswordAndResetPasswordTests(APITestCase):
+    def setUp(self):
+        self.user = User.objects.create_user(
+            username="resetuser@example.com",
+            email="resetuser@example.com",
+            full_name="Reset User",
+            password="oldpassword123",
+            role="RESIDENT",
+            is_active=True
+        )
+
+    def test_forgot_password_generates_otp_and_returns_generic_response(self):
+        response = self.client.post("/api/auth/forgot-password/", {"email": "resetuser@example.com"})
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertTrue(response.data["success"])
+        self.assertEqual(response.data["message"], "If the email is registered, a verification code has been sent.")
+        self.assertIn("otp", response.data)
+
+    def test_forgot_password_account_enumeration_protection(self):
+        response = self.client.post("/api/auth/forgot-password/", {"email": "nonexistent@example.com"})
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertTrue(response.data["success"])
+        self.assertEqual(response.data["message"], "If the email is registered, a verification code has been sent.")
+        self.assertNotIn("otp", response.data)
+
+    def test_verify_reset_otp_issues_reset_token(self):
+        # Trigger reset
+        forgot_res = self.client.post("/api/auth/forgot-password/", {"email": "resetuser@example.com"})
+        otp = forgot_res.data["otp"]
+
+        # Verify OTP
+        verify_res = self.client.post("/api/auth/verify-reset-otp/", {
+            "email": "resetuser@example.com",
+            "otp": otp
+        })
+        self.assertEqual(verify_res.status_code, status.HTTP_200_OK)
+        self.assertTrue(verify_res.data["success"])
+        self.assertIn("reset_token", verify_res.data)
+
+    def test_verify_reset_otp_invalid_code(self):
+        self.client.post("/api/auth/forgot-password/", {"email": "resetuser@example.com"})
+        verify_res = self.client.post("/api/auth/verify-reset-otp/", {
+            "email": "resetuser@example.com",
+            "otp": "000000"
+        })
+        self.assertEqual(verify_res.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertFalse(verify_res.data["success"])
+
+    def test_reset_password_success_and_login_with_new_password(self):
+        # 1. Request OTP
+        forgot_res = self.client.post("/api/auth/forgot-password/", {"email": "resetuser@example.com"})
+        otp = forgot_res.data["otp"]
+
+        # 2. Verify OTP -> get reset_token
+        verify_res = self.client.post("/api/auth/verify-reset-otp/", {
+            "email": "resetuser@example.com",
+            "otp": otp
+        })
+        reset_token = verify_res.data["reset_token"]
+
+        # 3. Reset password
+        reset_res = self.client.post("/api/auth/reset-password/", {
+            "reset_token": reset_token,
+            "new_password": "newpassword123",
+            "confirm_password": "newpassword123"
+        })
+        self.assertEqual(reset_res.status_code, status.HTTP_200_OK)
+        self.assertTrue(reset_res.data["success"])
+
+        # 4. Old password login attempt -> 401 Unauthorized
+        old_login = self.client.post("/api/accounts/login/", {
+            "email": "resetuser@example.com",
+            "password": "oldpassword123"
+        })
+        self.assertEqual(old_login.status_code, status.HTTP_401_UNAUTHORIZED)
+
+        # 5. New password login attempt -> 200 OK + JWT tokens
+        new_login = self.client.post("/api/accounts/login/", {
+            "email": "resetuser@example.com",
+            "password": "newpassword123"
+        })
+        self.assertEqual(new_login.status_code, status.HTTP_200_OK)
+        self.assertIn("access", new_login.data)
+

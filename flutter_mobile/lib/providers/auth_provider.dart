@@ -239,15 +239,18 @@ class AuthProvider extends ChangeNotifier {
       if (err.response != null && err.response.data != null) {
         final data = err.response.data;
         if (data is Map) {
-          if (data.containsKey('detail')) {
+          if (data.containsKey('message') && data['message'] != null && data['message'].toString().isNotEmpty && data['message'].toString() != 'Validation error.') {
+            return data['message'].toString();
+          }
+          if (data.containsKey('detail') && data['detail'] != null) {
             return data['detail'].toString();
           }
           final messages = <String>[];
           data.forEach((key, val) {
             if (val is List) {
-              messages.add('${key}: ${val.join(", ")}');
+              messages.add('$key: ${val.join(", ")}');
             } else {
-              messages.add('${key}: $val');
+              messages.add('$key: $val');
             }
           });
           if (messages.isNotEmpty) {

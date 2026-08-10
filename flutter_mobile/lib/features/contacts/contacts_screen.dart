@@ -301,30 +301,23 @@ class _ContactsScreenState extends State<ContactsScreen> with SingleTickerProvid
             final messenger = ScaffoldMessenger.of(context);
             final navigator = Navigator.of(context);
             try {
-              await _contactsRepository.linkGuardian(
+              final result = await _contactsRepository.linkGuardian(
                 guardianCode: code,
                 relationship: relationship,
                 isPrimary: isPrimary,
               );
               navigator.pop();
               await _loadContactsFromBackend();
+              final successMsg = result['message'] as String? ?? 'Guardian request sent successfully. Awaiting guardian approval.';
               messenger.showSnackBar(
-                const SnackBar(
-                  content: Text('Guardian link request sent! Awaiting guardian approval.'),
+                SnackBar(
+                  content: Text(successMsg),
                   backgroundColor: AppTheme.success,
                   behavior: SnackBarBehavior.floating,
                 ),
               );
             } catch (e) {
-              String msg = 'Failed to connect guardian. Please verify code.';
-              final errStr = e.toString();
-              if (errStr.contains('Invalid Guardian Code')) {
-                msg = 'Invalid Guardian Code. Please check code and try again.';
-              } else if (errStr.contains('already linked')) {
-                msg = 'This guardian is already linked or request is pending.';
-              } else if (errStr.contains('yourself')) {
-                msg = 'You cannot link yourself as a guardian.';
-              }
+              final msg = ApiClient.extractErrorMessage(e);
               messenger.showSnackBar(
                 SnackBar(
                   content: Text(msg),
@@ -334,11 +327,11 @@ class _ContactsScreenState extends State<ContactsScreen> with SingleTickerProvid
               );
             }
           },
-
         );
       },
     );
   }
+
 
 
 

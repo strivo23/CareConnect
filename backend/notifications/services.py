@@ -1,10 +1,21 @@
 import logging
 import os
+import requests
 from django.core.mail import EmailMultiAlternatives
 from django.template.loader import render_to_string
 from django.utils.html import strip_tags
 from django.conf import settings
 from .models import Notification, FCMDevice, NotificationTemplate, NotificationLog
+from .notification_service import (
+    SMSService,
+    TextBeeSMSProvider,
+    TwilioSMSProvider,
+    ConsoleSMSProvider,
+    format_e164_phone,
+    send_email,
+    send_push,
+    _safe_str
+)
 
 # Firebase Admin SDK imports
 try:
@@ -21,11 +32,11 @@ logger = logging.getLogger(__name__)
 _firebase_initialized = False
 if firebase_admin:
     try:
-        # Check if FIREBASE_SERVICE_ACCOUNT is set or if serviceAccountKey.json exists
         service_account_path = getattr(settings, 'FIREBASE_SERVICE_ACCOUNT_PATH', None)
         if service_account_path and os.path.exists(service_account_path):
-            cred = credentials.Certificate(service_account_path)
-            firebase_admin.initialize_app(cred)
+            if not firebase_admin._apps:
+                cred = credentials.Certificate(service_account_path)
+                firebase_admin.initialize_app(cred)
             _firebase_initialized = True
             logger.info("Firebase Admin SDK initialized successfully.")
         else:
@@ -34,17 +45,12 @@ if firebase_admin:
         logger.error(f"Failed to initialize Firebase Admin SDK: {e}")
         _firebase_initialized = False
 
-def _safe_str(s: str) -> str:
-    """Helper to clean Unicode characters for printing to standard Windows consoles."""
-    if not s:
-        return ""
-    # Replace common emoji symbols or ignore other non-ascii
-    return s.replace('🚨', '[ALERT]').encode('ascii', 'ignore').decode('ascii')
 
 class NotificationEngineService:
     """
     Business-logic service layer for Notification dispatches (FCM, Email, SMS, In-App).
     """
+
 
     @staticmethod
     def register_device_token(user, token: str) -> FCMDevice:
@@ -250,29 +256,9 @@ class NotificationEngineService:
 
     @staticmethod
     def send_sms(phone: str, message: str, user=None) -> bool:
-        """Mock SMS sending log."""
-        try:
-            print(_safe_str(f"[MOCK SMS] Sent SMS to {phone}: {message}"))
-            NotificationLog.objects.create(
-                user=user,
-                channel='SMS',
-                status='SUCCESS',
-                recipient=phone,
-                title='',
-                message=message
-            )
-            return True
-        except Exception as e:
-            NotificationLog.objects.create(
-                user=user,
-                channel='SMS',
-                status='FAILURE',
-                recipient=phone,
-                title='',
-                message=message,
-                error_message=str(e)
-            )
-            return False
+        """Dispatches SMS via configured SMSService provider (TextBee / Twilio / Console)."""
+        return SMSService.send_sms(phone, message, user=user)
+
 
     @classmethod
     def dispatch_notification(cls, user, title: str, message: str, category: str = 'general', incident=None, channels=None, priority='LOW') -> Notification:
@@ -308,7 +294,7 @@ class NotificationEngineService:
                 incident=incident,
                 is_read=False,
                 priority=priority,
-                location=f"{incident.latitude},{incident.longitude}" if (incident and incident.latitude and incident.longitude) else (incident.address or '')
+                location=f"{incident.latitude},{incident.longitude}" if (incident and incident.latitude and incident.longitude) else (incident.address if incident else '')
             )
             NotificationLog.objects.create(
                 user=user,

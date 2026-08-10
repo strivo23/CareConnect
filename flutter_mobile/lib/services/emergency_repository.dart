@@ -43,12 +43,18 @@ class EmergencyRepository {
     required int incidentId,
     String? emergencyDescription,
     String? voiceFilePath,
+    int? voiceDuration,
     void Function(int sent, int total)? onSendProgress,
   }) async {
     final formData = FormData();
 
     if (emergencyDescription != null && emergencyDescription.trim().isNotEmpty) {
       formData.fields.add(MapEntry('emergency_description', emergencyDescription.trim()));
+      formData.fields.add(MapEntry('message', emergencyDescription.trim()));
+    }
+
+    if (voiceDuration != null && voiceDuration > 0) {
+      formData.fields.add(MapEntry('voice_duration', voiceDuration.toString()));
     }
 
     if (voiceFilePath != null && voiceFilePath.isNotEmpty) {
@@ -70,6 +76,34 @@ class EmergencyRepository {
       onSendProgress: onSendProgress,
     );
 
+    return Map<String, dynamic>.from(response.data as Map);
+  }
+
+  /// Delete voice recording from an SOS incident.
+  Future<Map<String, dynamic>> deleteVoiceMessage(int incidentId) async {
+    final response = await _client.delete('/api/sos/$incidentId/voice/');
+    return Map<String, dynamic>.from(response.data as Map);
+  }
+
+  /// Update an existing SOS incident (text description, priority, location).
+  Future<Map<String, dynamic>> updateSOSIncident({
+    required int incidentId,
+    String? message,
+    String? emergencyDescription,
+    String? priority,
+    double? latitude,
+    double? longitude,
+    String? address,
+  }) async {
+    final data = <String, dynamic>{};
+    if (message != null) data['message'] = message;
+    if (emergencyDescription != null) data['emergency_description'] = emergencyDescription;
+    if (priority != null) data['priority'] = priority;
+    if (latitude != null) data['latitude'] = latitude;
+    if (longitude != null) data['longitude'] = longitude;
+    if (address != null) data['address'] = address;
+
+    final response = await _client.patch('/api/sos/$incidentId/', data: data);
     return Map<String, dynamic>.from(response.data as Map);
   }
 }

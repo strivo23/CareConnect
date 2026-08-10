@@ -103,6 +103,26 @@ class NotificationDispatcherTests(TestCase):
         self.assertEqual(summary['resident'], 1)
         self.assertTrue(Notification.objects.filter(user=self.resident, notification_type='GUARDIAN_RESPONSE').exists())
 
+    def test_dispatcher_guardian_rejection_triggers_escalation(self):
+        User.objects.create_user(
+            username="security@test.com",
+            email="security@test.com",
+            password="pass123",
+            full_name="Security Guard",
+            role="SECURITY",
+            is_active=True
+        )
+        summary = NotificationDispatcher.dispatch_guardian_response(self.incident, self.guardian, 'Declined')
+        self.assertIn('escalation', summary)
+        self.assertTrue(Notification.objects.filter(notification_type='INCIDENT_ESCALATED').exists())
+
+    def test_dispatcher_explicit_escalation_routing(self):
+        summary = NotificationDispatcher.dispatch_sos_escalation(self.incident, reason="Test escalation timeout")
+        self.assertIn('secondary_guardians', summary)
+        self.assertIn('security', summary)
+        self.assertIn('volunteers', summary)
+        self.assertIn('admin', summary)
+
 
 class NotificationAPITests(APITestCase):
     def setUp(self):
@@ -176,3 +196,57 @@ class NotificationAPITests(APITestCase):
         url = reverse("notification-history")
         res = self.client.get(url)
         self.assertEqual(res.status_code, status.HTTP_200_OK)
+
+
+class SMSAndEmailGatewayTests(TestCase):
+    def test_format_e164_phone(self):
+        from notifications.notification_service import format_e164_phone
+        self.assertEqual(format_e164_phone("9876543210"), "+919876543210")
+        self.assertEqual(format_e164_phone("+1 555-019-2834"), "+15550192834")
+        self.assertEqual(format_e164_phone(""), "")
+
+    def test_sms_service_console_provider(self):
+        from notifications.notification_service import SMSService, ConsoleSMSProvider
+        with self.settings(SMS_PROVIDER="CONSOLE"):
+            provider = SMSService.get_provider()
+            self.assertIsInstance(provider, ConsoleSMSProvider)
+            success = SMSService.send_sms("+919876543210", "Test Console SMS")
+            self.assertTrue(success)
+            self.assertTrue(SMSLog.objects.filter(to_number="+919876543210", provider="CONSOLE").exists())
+
+    def test_textbee_sms_provider_url_and_formatting(self):
+        from unittest.mock import patch, MagicMock
+        from notifications.notification_service import SMSService, TextBeeSMSProvider
+
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {"id": "tb_123456"}
+
+        with self.settings(
+            SMS_PROVIDER="TEXTBEE",
+            TEXTBEE_API_KEY="test_key_123",
+            TEXTBEE_DEVICE_ID="iQOO I2407 (iQOO(Mr.kanth))",
+            TEXTBEE_BASE_URL="https://api.textbee.dev/api/v1"
+        ):
+            provider = SMSService.get_provider()
+            self.assertIsInstance(provider, TextBeeSMSProvider)
+
+            with patch("requests.post", return_value=mock_response) as mock_post:
+                success = SMSService.send_sms("9876543210", "Emergency Alert Test")
+                self.assertTrue(success)
+                mock_post.assert_called_once()
+                call_args, call_kwargs = mock_post.call_args
+                url = call_args[0]
+                self.assertIn("iQOO%20I2407%20%28iQOO%28Mr.kanth%29%29", url)
+                self.assertEqual(call_kwargs["headers"]["x-api-key"], "test_key_123")
+                self.assertEqual(call_kwargs["json"]["recipients"], ["+919876543210"])
+
+    def test_send_email_fallback_logging(self):
+        from unittest.mock import patch
+        from notifications.notification_service import send_email
+
+        with patch("django.core.mail.send_mail", return_value=1):
+            ok = send_email("recipient@example.com", "Test Subject", "Test Message Body")
+            self.assertTrue(ok)
+            self.assertTrue(NotificationLog.objects.filter(recipient="recipient@example.com", channel="EMAIL", status="SUCCESS").exists())
+

@@ -37,8 +37,16 @@ class LocationService {
     );
   }
 
-  /// Reverse geocode latitude and longitude using backend API or OpenStreetMap Nominatim API directly.
-  Future<String> reverseGeocode(double latitude, double longitude) async {
+  /// Reverse geocode latitude and longitude returning structured details.
+  Future<Map<String, String>> reverseGeocodeDetails(double latitude, double longitude) async {
+    final fallback = {
+      'address': 'Location unavailable',
+      'city': '',
+      'state': '',
+      'country': '',
+      'pincode': '',
+    };
+
     try {
       final response = await _client.get(
         '/api/geocode/reverse/',
@@ -49,10 +57,14 @@ class LocationService {
       );
       if (response.statusCode == 200) {
         final data = response.data as Map<String, dynamic>;
-        final addr = data['address']?.toString();
-        if (addr != null && addr.isNotEmpty && addr != 'Address not resolved') {
-          return addr;
-        }
+        final addr = data['address']?.toString() ?? 'Location unavailable';
+        return {
+          'address': addr,
+          'city': data['city']?.toString() ?? '',
+          'state': data['state']?.toString() ?? '',
+          'country': data['country']?.toString() ?? '',
+          'pincode': data['pincode']?.toString() ?? '',
+        };
       }
     } catch (_) {}
 
@@ -66,20 +78,33 @@ class LocationService {
       final res = await dio.get(
         'https://nominatim.openstreetmap.org/reverse',
         queryParameters: {
-          'format': 'json',
+          'format': 'jsonv2',
           'lat': latitude,
           'lon': longitude,
         },
       );
       if (res.statusCode == 200 && res.data is Map) {
-        final displayName = res.data['display_name']?.toString();
-        if (displayName != null && displayName.isNotEmpty) {
-          return displayName;
+        final rawAddr = res.data['address'] as Map?;
+        final displayName = res.data['display_name']?.toString() ?? 'Location unavailable';
+        if (rawAddr != null) {
+          return {
+            'address': displayName,
+            'city': rawAddr['city']?.toString() ?? rawAddr['town']?.toString() ?? rawAddr['village']?.toString() ?? '',
+            'state': rawAddr['state']?.toString() ?? '',
+            'country': rawAddr['country']?.toString() ?? '',
+            'pincode': rawAddr['postcode']?.toString() ?? '',
+          };
         }
+        return {'address': displayName, 'city': '', 'state': '', 'country': '', 'pincode': ''};
       }
     } catch (_) {}
 
-    return 'Location unavailable';
+    return fallback;
   }
 
+  /// Reverse geocode latitude and longitude returning formatted address.
+  Future<String> reverseGeocode(double latitude, double longitude) async {
+    final details = await reverseGeocodeDetails(latitude, longitude);
+    return details['address'] ?? 'Location unavailable';
+  }
 }

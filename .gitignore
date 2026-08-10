@@ -18,6 +18,26 @@ db.sqlite3
 .dart_tool/
 build/
 
+# Python
+venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Django
+db.sqlite3
+
+# IDE
+.idea/
+.vscode/
+
+# Flutter
+.flutter-plugins
+.flutter-plugins-dependencies
+.dart_tool/
+build/
+
 # macOS
 .DS_Store
 
@@ -26,3 +46,19 @@ Thumbs.db
 
 # Firebase
 flutter_mobile/android/app/google-services.json
+__pycache__/
+
+# Node / Web Build
+node_modules/
+dist/
+admin-portal/dist/
+admin-portal/node_modules/
+
+# Django Static & Local Envs
+backend/staticfiles/
+backend/.env
+.env
+
+# Temporary / Scratch
+scratch/
+*.log

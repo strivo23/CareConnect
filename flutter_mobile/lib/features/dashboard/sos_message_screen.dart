@@ -4,6 +4,8 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:go_router/go_router.dart';
 import 'package:speech_to_text/speech_to_text.dart' as stt;
 
+import 'package:flutter_map/flutter_map.dart';
+import 'package:latlong2/latlong.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/services/api_client.dart';
 import '../../services/location_service.dart';
@@ -351,11 +353,221 @@ class _SOSMessageScreenState extends State<SOSMessageScreen> {
         'priority': _selectedPriority,
         'message': _messageController.text.trim(),
         'emergency_description': _messageController.text.trim(),
-        'voiceFilePath': _recordedFilePath,
+        'voice_duration': _recordDuration,
         'latitude': _currentLat ?? 0.0,
         'longitude': _currentLng ?? 0.0,
         'address': _currentAddress,
       },
+    );
+  }
+
+  Widget _buildEmergencySuggestions(bool isDark) {
+    final suggestions = [
+      'Chest Pain / Medical Emergency',
+      'Suspicious Intruder / Person',
+      'Fire Outbreak',
+      'Physical Danger / Assault',
+      'Stuck in Elevator',
+      'Severe Injury / Fall',
+    ];
+
+    return Wrap(
+      spacing: 8,
+      runSpacing: 8,
+      children: suggestions.map((suggestion) {
+        final isSelected = _messageController.text == suggestion;
+        return InkWell(
+          onTap: () {
+            setState(() {
+              _messageController.text = suggestion;
+              _messageController.selection = TextSelection.fromPosition(
+                TextPosition(offset: _messageController.text.length),
+              );
+            });
+          },
+          borderRadius: BorderRadius.circular(16),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+            decoration: BoxDecoration(
+              color: isSelected
+                  ? AppTheme.danger.withValues(alpha: 0.15)
+                  : (isDark ? const Color(0xFF1E293B) : const Color(0xFFF1F5F9)),
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(
+                color: isSelected ? AppTheme.danger : (isDark ? Colors.white10 : const Color(0xFFCBD5E1)),
+                width: isSelected ? 1.5 : 1.0,
+              ),
+            ),
+            child: Text(
+              suggestion,
+              style: GoogleFonts.inter(
+                fontSize: 11.5,
+                fontWeight: FontWeight.w600,
+                color: isSelected ? AppTheme.danger : (isDark ? Colors.white70 : const Color(0xFF475569)),
+              ),
+            ),
+          ),
+        );
+      }).toList(),
+    );
+  }
+
+  Widget _buildMapPreview(bool isDark) {
+    if (_currentLat == null || _currentLng == null) {
+      return Container(
+        height: 140,
+        decoration: BoxDecoration(
+          color: isDark ? const Color(0xFF1E293B) : const Color(0xFFF1F5F9),
+          borderRadius: BorderRadius.circular(16),
+        ),
+        child: Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const Icon(Icons.location_off_rounded, color: Color(0xFF94A3B8), size: 32),
+              const SizedBox(height: 8),
+              Text(
+                'Fetching location coordinates...',
+                style: GoogleFonts.inter(fontSize: 12, color: const Color(0xFF94A3B8)),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    final point = LatLng(_currentLat!, _currentLng!);
+
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(16),
+      child: Container(
+        height: 160,
+        decoration: BoxDecoration(
+          border: Border.all(color: isDark ? Colors.white10 : const Color(0xFFE2E8F0)),
+        ),
+        child: Stack(
+          children: [
+            FlutterMap(
+              options: MapOptions(
+                initialCenter: point,
+                initialZoom: 16.0,
+                interactionOptions: const InteractionOptions(flags: InteractiveFlag.none),
+              ),
+              children: [
+                TileLayer(
+                  urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                  userAgentPackageName: 'com.careconnect.app',
+                ),
+                MarkerLayer(
+                  markers: [
+                    Marker(
+                      point: point,
+                      width: 40,
+                      height: 40,
+                      child: const Icon(
+                        Icons.location_on_rounded,
+                        color: AppTheme.danger,
+                        size: 36,
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+            Positioned(
+              right: 8,
+              bottom: 8,
+              child: ElevatedButton.icon(
+                onPressed: _showFullMapModal,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Theme.of(context).colorScheme.surface,
+                  foregroundColor: Theme.of(context).colorScheme.onSurface,
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  elevation: 3,
+                ),
+                icon: const Icon(Icons.map_rounded, size: 16, color: AppTheme.danger),
+                label: Text(
+                  'Expand Map',
+                  style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.bold),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showFullMapModal() {
+    if (_currentLat == null || _currentLng == null) return;
+    final point = LatLng(_currentLat!, _currentLng!);
+
+    showDialog(
+      context: context,
+      builder: (ctx) => Dialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+        child: Container(
+          width: double.infinity,
+          height: 460,
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(
+                    'Emergency Location Map',
+                    style: GoogleFonts.outfit(fontSize: 18, fontWeight: FontWeight.bold),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.close_rounded),
+                    onPressed: () => Navigator.of(ctx).pop(),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              Expanded(
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(16),
+                  child: FlutterMap(
+                    options: MapOptions(
+                      initialCenter: point,
+                      initialZoom: 16.0,
+                    ),
+                    children: [
+                      TileLayer(
+                        urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                        userAgentPackageName: 'com.careconnect.app',
+                      ),
+                      MarkerLayer(
+                        markers: [
+                          Marker(
+                            point: point,
+                            width: 44,
+                            height: 44,
+                            child: const Icon(
+                              Icons.location_on_rounded,
+                              color: AppTheme.danger,
+                              size: 44,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(height: 12),
+              Text(
+                _currentAddress,
+                style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w600),
+                textAlign: TextAlign.center,
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 
@@ -601,6 +813,8 @@ class _SOSMessageScreenState extends State<SOSMessageScreen> {
                           ],
                         ),
                       ),
+                      const SizedBox(height: 10),
+                      _buildEmergencySuggestions(isDark),
                       const SizedBox(height: 24),
 
                       // ── Voice Recording Card ────────────────────────────────────
@@ -871,6 +1085,8 @@ class _SOSMessageScreenState extends State<SOSMessageScreen> {
                                 ],
                               ),
                             ),
+                            const SizedBox(height: 12),
+                            _buildMapPreview(isDark),
                             const SizedBox(height: 12),
                             Text(
                               'OpenStreetMap Resolved Address:',

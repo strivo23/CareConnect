@@ -40,8 +40,26 @@ def _safe_str(s: str) -> str:
 
 
 # ---------------------------------------------------------------------------
-# SMS Service Architecture (Pluggable for Twilio / Console)
+# SMS Service Architecture (Pluggable for TextBee / Twilio / Console)
 # ---------------------------------------------------------------------------
+
+import urllib.parse
+import re
+import requests
+
+def format_e164_phone(phone: str) -> str:
+    """Format input phone number into clean E.164 format (+XXXXXXXXXXX)."""
+    if not phone:
+        return ""
+    clean = re.sub(r'[^\d+]', '', str(phone).strip())
+    if not clean:
+        return ""
+    if clean.startswith('+'):
+        return clean
+    if len(clean) == 10:
+        return f"+91{clean}"
+    return f"+{clean}"
+
 
 class BaseSMSProvider:
     def send(self, to_number: str, message: str) -> tuple[bool, str]:
@@ -49,7 +67,8 @@ class BaseSMSProvider:
 
 class ConsoleSMSProvider(BaseSMSProvider):
     def send(self, to_number: str, message: str) -> tuple[bool, str]:
-        print(f"[SMS LOG] To: {to_number} | Message: {message}", flush=True)
+        formatted = format_e164_phone(to_number)
+        print(f"[SMS LOG] To: {formatted or to_number} | Message: {message}", flush=True)
         return True, ""
 
 class TwilioSMSProvider(BaseSMSProvider):
@@ -61,66 +80,124 @@ class TwilioSMSProvider(BaseSMSProvider):
     def send(self, to_number: str, message: str) -> tuple[bool, str]:
         if not self.account_sid or not self.auth_token:
             return False, "Twilio credentials not configured"
+        formatted_phone = format_e164_phone(to_number)
+        if not formatted_phone:
+            return False, f"Invalid phone number: {to_number}"
         try:
             from twilio.rest import Client
             client = Client(self.account_sid, self.auth_token)
             msg = client.messages.create(
                 body=message,
                 from_=self.from_number,
-                to=to_number
+                to=formatted_phone
             )
             return True, msg.sid
         except Exception as e:
             return False, str(e)
 
 
+class TextBeeSMSProvider(BaseSMSProvider):
+    def __init__(self):
+        self.api_key = getattr(settings, 'TEXTBEE_API_KEY', '')
+        self.device_id = getattr(settings, 'TEXTBEE_DEVICE_ID', '')
+        self.base_url = getattr(settings, 'TEXTBEE_BASE_URL', 'https://api.textbee.dev/api/v1').rstrip('/')
+
+    def send(self, to_number: str, message: str) -> tuple[bool, str]:
+        if not self.api_key or not self.device_id:
+            return False, "TextBee API key or Device ID not configured"
+
+        formatted_phone = format_e164_phone(to_number)
+        if not formatted_phone:
+            return False, f"Invalid phone number: {to_number}"
+
+        encoded_dev_id = urllib.parse.quote(self.device_id)
+        url = f"{self.base_url}/gateway/devices/{encoded_dev_id}/send-sms"
+        headers = {
+            "x-api-key": self.api_key,
+            "Content-Type": "application/json"
+        }
+        payload = {
+            "recipients": [formatted_phone],
+            "message": message
+        }
+
+        try:
+            res = requests.post(url, json=payload, headers=headers, timeout=10)
+            if res.status_code in (200, 201):
+                try:
+                    data = res.json()
+                    msg_id = data.get('id') or data.get('_id') or data.get('message') or "SUCCESS"
+                except Exception:
+                    msg_id = "SUCCESS"
+                print(_safe_str(f"[TEXTBEE SMS SUCCESS] Sent to {formatted_phone}: {message}"))
+                return True, str(msg_id)
+            else:
+                err_msg = f"TextBee HTTP {res.status_code}: {res.text}"
+                logger.error(err_msg)
+                print(_safe_str(f"[TEXTBEE SMS ERROR] {err_msg}"))
+                return False, err_msg
+        except Exception as e:
+            err_msg = f"TextBee SMS Exception: {str(e)}"
+            logger.error(err_msg)
+            print(_safe_str(f"[TEXTBEE SMS EXCEPTION] {e}"))
+            return False, err_msg
+
+
 class SMSService:
     """
-    Pluggable SMS Service class.
-    Logs SMS to backend console, saves SMSLog record in PostgreSQL, and is ready for Twilio.
+    Pluggable SMS Service class supporting TextBee, Twilio, and Console logging.
+    Logs SMS to console/external service and saves SMSLog & NotificationLog in PostgreSQL.
     """
     _provider = None
 
     @classmethod
     def get_provider(cls):
-        if cls._provider is None:
-            provider_name = getattr(settings, 'SMS_PROVIDER', 'CONSOLE').upper()
-            if provider_name == 'TWILIO':
-                cls._provider = TwilioSMSProvider()
-            else:
-                cls._provider = ConsoleSMSProvider()
-        return cls._provider
+        provider_name = getattr(settings, 'SMS_PROVIDER', 'CONSOLE').upper()
+        if provider_name == 'TEXTBEE':
+            return TextBeeSMSProvider()
+        elif provider_name == 'TWILIO':
+            return TwilioSMSProvider()
+        else:
+            return ConsoleSMSProvider()
 
     @classmethod
     def send_sms(cls, to_number: str, message: str, user=None) -> bool:
         if not to_number:
             return False
 
+        formatted_recipient = format_e164_phone(to_number)
         provider = cls.get_provider()
         provider_name = getattr(settings, 'SMS_PROVIDER', 'CONSOLE').upper()
         success, err = provider.send(to_number, message)
 
         # Store SMS Log in PostgreSQL DB
-        SMSLog.objects.create(
-            user=user,
-            to_number=to_number,
-            message=message,
-            provider=provider_name,
-            status='SENT' if success else 'FAILED',
-            error_message=err if err else None
-        )
+        try:
+            SMSLog.objects.create(
+                user=user,
+                to_number=formatted_recipient or to_number,
+                message=message,
+                provider=provider_name,
+                status='SENT' if success else 'FAILED',
+                error_message=err if err else None
+            )
+        except Exception as e:
+            logger.error(f"Failed to record SMSLog: {e}")
 
-        NotificationLog.objects.create(
-            user=user,
-            channel='SMS',
-            status='SUCCESS' if success else 'FAILURE',
-            recipient=to_number,
-            title='',
-            message=message,
-            error_message=err if err else None
-        )
+        try:
+            NotificationLog.objects.create(
+                user=user,
+                channel='SMS',
+                status='SUCCESS' if success else 'FAILURE',
+                recipient=formatted_recipient or to_number,
+                title='',
+                message=message,
+                error_message=err if err else None
+            )
+        except Exception as e:
+            logger.error(f"Failed to record NotificationLog: {e}")
 
         return success
+
 
 
 # ---------------------------------------------------------------------------
@@ -257,7 +334,8 @@ def send_email(to_email: str, subject: str, message_body: str, html_message: str
 def notify_guardians(incident) -> int:
     """
     Notify all guardians of the resident when an SOS is created.
-    Sends Email (Subject: 'Emergency SOS Alert'), Push, and SMS.
+    Sends In-App Notification, Email (Subject: 'Emergency SOS Alert'), Push, and SMS.
+    Guarantees in-app Notification record in PostgreSQL for every linked guardian.
     """
     from emergency.models import ResidentGuardian, Guardian, EmergencyContact
 
@@ -265,40 +343,44 @@ def notify_guardians(incident) -> int:
     count = 0
     notified_emails = set()
 
-    # 1. ResidentGuardian linked accounts
+    # 1. ResidentGuardian linked accounts (Both Primary & Secondary)
     links = ResidentGuardian.objects.filter(resident=resident, status='Active').select_related('guardian')
     for link in links:
         guardian_user = link.guardian
-        if guardian_user and guardian_user.email and guardian_user.email not in notified_emails:
+        if not guardian_user:
+            continue
+
+        # GUARANTEE In-App Notification record for guardian_user
+        Notification.objects.create(
+            user=guardian_user,
+            title="🚨 Emergency SOS Alert",
+            message=f"SOS alert from {resident.full_name}: {incident.message or 'Immediate assistance required.'}",
+            category="sos",
+            incident=incident,
+            priority=incident.priority or "HIGH"
+        )
+
+        if guardian_user.email and guardian_user.email not in notified_emails:
             notified_emails.add(guardian_user.email)
             _send_guardian_sos_email(guardian_user.email, incident, guardian_user.full_name, user=guardian_user)
 
-            Notification.objects.create(
-                user=guardian_user,
-                title="🚨 Emergency SOS Alert",
-                message=f"SOS alert from {resident.full_name}: {incident.message or 'Immediate assistance required.'}",
-                category="sos",
-                incident=incident,
-                priority=incident.priority or "HIGH"
-            )
+        send_push(
+            user=guardian_user,
+            title="Emergency SOS Alert",
+            body=f"{resident.full_name} triggered an SOS emergency alert!",
+            data={
+                "incident_id": str(incident.id),
+                "resident_name": resident.full_name,
+                "category": incident.category.name if incident.category else "SOS",
+                "click_action": "FLUTTER_NOTIFICATION_CLICK"
+            }
+        )
 
-            send_push(
-                user=guardian_user,
-                title="Emergency SOS Alert",
-                body=f"{resident.full_name} triggered an SOS emergency alert!",
-                data={
-                    "incident_id": str(incident.id),
-                    "resident_name": resident.full_name,
-                    "category": incident.category.name if incident.category else "SOS",
-                    "click_action": "FLUTTER_NOTIFICATION_CLICK"
-                }
-            )
+        if guardian_user.phone_number:
+            sms_text = f"EMERGENCY SOS: {resident.full_name} requested assistance at {incident.address or 'Unknown location'}. Message: {incident.message or 'None'}"
+            SMSService.send_sms(guardian_user.phone_number, sms_text, user=guardian_user)
 
-            if guardian_user.phone_number:
-                sms_text = f"EMERGENCY SOS: {resident.full_name} requested assistance at {incident.address or 'Unknown location'}. Message: {incident.message or 'None'}"
-                SMSService.send_sms(guardian_user.phone_number, sms_text, user=guardian_user)
-
-            count += 1
+        count += 1
 
     # 2. EmergencyContact entries
     contacts = EmergencyContact.objects.filter(resident=resident)
@@ -319,6 +401,7 @@ def notify_guardians(incident) -> int:
             SMSService.send_sms(g.phone, sms_text)
 
     return count
+
 
 
 def _send_guardian_sos_email(to_email: str, incident, guardian_name: str = 'Guardian', user=None) -> bool:

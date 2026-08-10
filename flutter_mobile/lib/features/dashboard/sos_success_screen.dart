@@ -96,6 +96,34 @@ class SOSSuccessScreen extends StatelessWidget {
                       label: 'Created Time',
                       value: DateFormat('dd MMM yyyy, hh:mm a').format(createdAt),
                     ),
+                    Divider(height: 20, color: isDark ? Colors.white10 : const Color(0xFFE2E8F0)),
+                    _buildDetailRow(
+                      context: context,
+                      label: 'Emergency Contacts',
+                      value: 'Notified',
+                      valueColor: Colors.green,
+                    ),
+                    Divider(height: 20, color: isDark ? Colors.white10 : const Color(0xFFE2E8F0)),
+                    _buildDetailRow(
+                      context: context,
+                      label: 'Guardian Status',
+                      value: 'Alert Sent',
+                      valueColor: Colors.green,
+                    ),
+                    Divider(height: 20, color: isDark ? Colors.white10 : const Color(0xFFE2E8F0)),
+                    _buildDetailRow(
+                      context: context,
+                      label: 'Security Staff',
+                      value: 'Dispatched',
+                      valueColor: Colors.green,
+                    ),
+                    Divider(height: 20, color: isDark ? Colors.white10 : const Color(0xFFE2E8F0)),
+                    _buildDetailRow(
+                      context: context,
+                      label: 'Volunteers',
+                      value: 'Broadcasting',
+                      valueColor: Colors.blue,
+                    ),
                   ],
                 ),
               ),
@@ -108,9 +136,8 @@ class SOSSuccessScreen extends StatelessWidget {
                   Expanded(
                     child: OutlinedButton(
                       onPressed: () {
-                        // Create mock AppNotificationModel to pass to detail view
                         final notif = AppNotificationModel(
-                          id: '0',
+                          id: incidentId.toString(),
                           title: 'Emergency SOS',
                           message: 'SOS created successfully',
                           category: 'sos',
@@ -153,7 +180,7 @@ class SOSSuccessScreen extends StatelessWidget {
                         elevation: 0,
                       ),
                       child: Text(
-                        'Go Home',
+                        'Return Home',
                         style: GoogleFonts.outfit(
                           fontWeight: FontWeight.bold,
                           fontSize: 15,
@@ -163,6 +190,7 @@ class SOSSuccessScreen extends StatelessWidget {
                   ),
                 ],
               ),
+
               const SizedBox(height: 12),
             ],
           ),

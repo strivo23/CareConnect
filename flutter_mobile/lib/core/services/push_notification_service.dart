@@ -288,7 +288,10 @@ class PushNotificationService {
   }
 
   Future<void> _getToken() async {
-    if (_messaging == null || !_supported) return;
+    if (_messaging == null || !_supported || kIsWeb) {
+      debugPrint('[PushNotificationService] FCM token retrieval skipped on Web platform.');
+      return;
+    }
 
     try {
       _fcmToken = await _messaging!.getToken();

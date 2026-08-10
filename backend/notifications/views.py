@@ -387,9 +387,149 @@ class NotificationLogViewSet(viewsets.ReadOnlyModelViewSet):
     permission_classes = [permissions.IsAuthenticated]
     pagination_class = NotificationPagination
 
+    def get_queryset(self):
+        qs = NotificationLog.objects.all().order_by('-created_at')
+        if not (self.request.user.is_staff or getattr(self.request.user, 'role', '') == 'ADMIN'):
+            qs = qs.filter(user=self.request.user)
+
+        channel = self.request.query_params.get('channel')
+        if channel:
+            qs = qs.filter(channel__iexact=channel)
+
+        status_param = self.request.query_params.get('status')
+        if status_param:
+            qs = qs.filter(status__iexact=status_param)
+
+        search = self.request.query_params.get('search')
+        if search:
+            qs = qs.filter(
+                Q(recipient__icontains=search) |
+                Q(title__icontains=search) |
+                Q(message__icontains=search)
+            )
+
+        return qs
+
+    @action(detail=True, methods=['post'], url_path='retry')
+    def retry(self, request, pk=None):
+        """
+        Retry dispatching a failed notification log entry.
+        """
+        log_entry = self.get_object()
+        user = log_entry.user
+        channel = (log_entry.channel or '').upper()
+
+        log_entry.retry_count += 1
+        success = False
+        provider_resp = ''
+        err_msg = ''
+
+        try:
+            from .notification_service import send_push, send_email, SMSService
+            if channel == 'FCM' and user:
+                success = send_push(user, log_entry.title or 'CareConnect Alert', log_entry.message)
+                provider_resp = 'FCM Push Retried'
+            elif channel == 'EMAIL':
+                success = send_email(log_entry.recipient, log_entry.title or 'CareConnect Alert', log_entry.message, user=user)
+                provider_resp = 'Email Retried via SMTP'
+            elif channel == 'SMS':
+                success = SMSService.send_sms(log_entry.recipient, log_entry.message, user=user)
+                provider_resp = 'SMS Retried'
+            elif channel == 'IN_APP' and user:
+                from .models import Notification
+                Notification.objects.create(
+                    user=user,
+                    title=log_entry.title or 'CareConnect Alert',
+                    message=log_entry.message,
+                    category='general'
+                )
+                success = True
+                provider_resp = 'In-App Notification Retried'
+            else:
+                err_msg = f"Unsupported channel or missing recipient for retry: {channel}"
+        except Exception as e:
+            success = False
+            err_msg = str(e)
+
+        if success:
+            log_entry.status = 'SUCCESS'
+            log_entry.provider_response = provider_resp
+            log_entry.error_message = None
+            log_entry.failure_reason = None
+        else:
+            log_entry.status = 'FAILURE'
+            log_entry.error_message = err_msg or 'Retry attempt failed'
+            log_entry.failure_reason = f"Retry count: {log_entry.retry_count}"
+
+        log_entry.save()
+
+        return Response(
+            NotificationLogSerializer(log_entry).data,
+            status=status.HTTP_200_OK if success else status.HTTP_400_BAD_REQUEST
+        )
+
+    @action(detail=False, methods=['post'], url_path='retry-failed')
+    def retry_failed(self, request):
+        """
+        Retry all failed notification logs.
+        """
+        failed_logs = NotificationLog.objects.filter(status='FAILURE')
+        if not (request.user.is_staff or getattr(request.user, 'role', '') == 'ADMIN'):
+            failed_logs = failed_logs.filter(user=request.user)
+
+        success_count = 0
+        total = failed_logs.count()
+
+        for log_entry in failed_logs[:50]:  # Limit batch
+            user = log_entry.user
+            channel = (log_entry.channel or '').upper()
+            log_entry.retry_count += 1
+            ok = False
+
+            try:
+                from .notification_service import send_push, send_email, SMSService
+                if channel == 'FCM' and user:
+                    ok = send_push(user, log_entry.title or 'CareConnect Alert', log_entry.message)
+                elif channel == 'EMAIL':
+                    ok = send_email(log_entry.recipient, log_entry.title or 'CareConnect Alert', log_entry.message, user=user)
+                elif channel == 'SMS':
+                    ok = SMSService.send_sms(log_entry.recipient, log_entry.message, user=user)
+            except Exception:
+                ok = False
+
+            if ok:
+                log_entry.status = 'SUCCESS'
+                log_entry.provider_response = 'Batch retry successful'
+                log_entry.error_message = None
+                log_entry.failure_reason = None
+                success_count += 1
+            else:
+                log_entry.status = 'FAILURE'
+                log_entry.failure_reason = f"Batch retry count: {log_entry.retry_count}"
+            log_entry.save()
+
+        return Response({
+            'message': f"Retried {min(total, 50)} failed notifications",
+            'success_count': success_count,
+            'total_failed': total
+        }, status=status.HTTP_200_OK)
+
 
 class SMSLogViewSet(viewsets.ReadOnlyModelViewSet):
     queryset = SMSLog.objects.all().order_by('-sent_at')
     serializer_class = SMSLogSerializer
     permission_classes = [permissions.IsAuthenticated]
     pagination_class = NotificationPagination
+
+
+class GuardianNotificationsAPIView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        user = request.user
+        notifications = Notification.objects.filter(
+            user=user,
+            category__in=['sos', 'emergency', 'guardian']
+        ).order_by('-created_at')[:50]
+        return Response(NotificationSerializer(notifications, many=True).data, status=status.HTTP_200_OK)
+

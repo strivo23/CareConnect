@@ -13,10 +13,5 @@ class SosConfig(AppConfig):
     verbose_name = "SOS & Emergency"
 
     def ready(self):
-        import os
-        from django.conf import settings
-        # Start daemon only in the main process (skip reloader helper in dev)
-        if os.environ.get('RUN_MAIN') == 'true' or not settings.DEBUG:
-            from .services import SOSService
-            SOSService.start_escalation_daemon()
-
+        # Background tasks and auto-escalation are processed via Celery workers and Celery Beat.
+        pass

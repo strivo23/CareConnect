@@ -1,0 +1,93 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: careconnect_postgres
+    restart: always
+    environment:
+      POSTGRES_DB: careconnect_db
+      POSTGRES_USER: postgres_user
+      POSTGRES_PASSWORD: postgres_password
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+
+  redis:
+    image: redis:7-alpine
+    container_name: careconnect_redis
+    restart: always
+    ports:
+      - "6379:6379"
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: careconnect_backend
+    restart: always
+    command: daphne -b 0.0.0.0 -p 8000 careconnect.asgi:application
+    environment:
+      - DEBUG=False
+      - SECRET_KEY=production-secure-secret-key-careconnect-2026
+      - ALLOWED_HOSTS=*
+      - DATABASE_URL=postgres://postgres_user:postgres_password@postgres:5432/careconnect_db
+      - REDIS_URL=redis://redis:6379/0
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/0
+    ports:
+      - "8000:8000"
+    depends_on:
+      - postgres
+      - redis
+
+  celery_worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: careconnect_celery_worker
+    restart: always
+    command: celery -A careconnect worker -l info
+    environment:
+      - DEBUG=False
+      - SECRET_KEY=production-secure-secret-key-careconnect-2026
+      - DATABASE_URL=postgres://postgres_user:postgres_password@postgres:5432/careconnect_db
+      - REDIS_URL=redis://redis:6379/0
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/0
+    depends_on:
+      - backend
+      - redis
+
+  celery_beat:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: careconnect_celery_beat
+    restart: always
+    command: celery -A careconnect beat -l info
+    environment:
+      - DEBUG=False
+      - SECRET_KEY=production-secure-secret-key-careconnect-2026
+      - DATABASE_URL=postgres://postgres_user:postgres_password@postgres:5432/careconnect_db
+      - REDIS_URL=redis://redis:6379/0
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/0
+    depends_on:
+      - backend
+      - redis
+
+  admin_portal:
+    build:
+      context: ./admin-portal
+      dockerfile: Dockerfile
+    container_name: careconnect_admin_portal
+    restart: always
+    ports:
+      - "80:80"
+    depends_on:
+      - backend
+
+volumes:
+  postgres_data:

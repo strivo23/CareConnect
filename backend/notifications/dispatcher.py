@@ -3,7 +3,8 @@ from django.utils import timezone
 from django.contrib.auth import get_user_model
 from django.db import transaction
 
-from .models import Notification, NotificationLog
+from django.db.models import Q
+from .models import Notification, NotificationLog, NotificationTemplate
 from .notification_service import send_push, send_email, SMSService, _safe_str
 
 User = get_user_model()
@@ -59,7 +60,46 @@ class NotificationDispatcher:
             channels = ['IN_APP', 'FCM', 'EMAIL', 'SMS']
 
         dispatched_notifs = []
-        now = timezone.now()
+
+        # Context mapping for template format placeholders
+        ctx = {
+            'resident_name': incident.resident.full_name if (incident and incident.resident) else (user.full_name if user else 'Resident'),
+            'guardian_name': user.full_name if recipient_role == 'GUARDIAN' else 'Guardian',
+            'volunteer_name': user.full_name if recipient_role == 'VOLUNTEER' else 'Volunteer',
+            'security_name': user.full_name if recipient_role == 'SECURITY' else 'Security',
+            'incident_id': str(incident.id) if incident else '',
+            'emergency_type': incident.category.name if (incident and incident.category) else 'SOS',
+            'location': incident.address or 'Location unavailable',
+            'time': incident.created_at.strftime('%Y-%m-%d %H:%M:%S UTC') if (incident and incident.created_at) else 'Just now',
+            'message': incident.message or incident.emergency_description or 'Immediate assistance required.'
+        }
+
+        # Template Substitution check
+        template = NotificationTemplate.objects.filter(Q(name=notification_type) | Q(name=category)).first()
+        push_text = message
+        email_text = message
+        sms_text = message
+
+        if template:
+            try:
+                if template.title_template:
+                    title = template.title_template.format(**ctx)
+                if template.message_template:
+                    message = template.message_template.format(**ctx)
+                if template.push_template:
+                    push_text = template.push_template.format(**ctx)
+                else:
+                    push_text = message
+                if template.email_template:
+                    email_text = template.email_template.format(**ctx)
+                else:
+                    email_text = message
+                if template.sms_template:
+                    sms_text = template.sms_template.format(**ctx)
+                else:
+                    sms_text = message
+            except Exception as e:
+                logger.warning(f"Failed formatting template {template.name}: {e}")
 
         # 1. In-App Notification
         if 'IN_APP' in channels:
@@ -94,26 +134,26 @@ class NotificationDispatcher:
         # 2. FCM Push
         if 'FCM' in channels:
             try:
-                push_ok = send_push(user, title, message, data=fcm_data)
-                cls._log_event(user, 'FCM', 'SUCCESS' if push_ok else 'FAILURE', user.email, title, message)
+                push_ok = send_push(user, title, push_text, data=fcm_data)
+                cls._log_event(user, 'FCM', 'SUCCESS' if push_ok else 'FAILURE', user.email, title, push_text)
             except Exception as e:
-                cls._log_event(user, 'FCM', 'FAILURE', user.email, title, message, error_message=str(e))
+                cls._log_event(user, 'FCM', 'FAILURE', user.email, title, push_text, error_message=str(e))
 
         # 3. Email (Gmail SMTP)
         if 'EMAIL' in channels and getattr(user, 'email', None):
             try:
-                email_ok = send_email(user.email, title, message, user=user)
-                cls._log_event(user, 'EMAIL', 'SUCCESS' if email_ok else 'FAILURE', user.email, title, message)
+                email_ok = send_email(user.email, title, email_text, user=user)
+                cls._log_event(user, 'EMAIL', 'SUCCESS' if email_ok else 'FAILURE', user.email, title, email_text)
             except Exception as e:
-                cls._log_event(user, 'EMAIL', 'FAILURE', user.email, title, message, error_message=str(e))
+                cls._log_event(user, 'EMAIL', 'FAILURE', user.email, title, email_text, error_message=str(e))
 
         # 4. SMS Service Abstraction
         if 'SMS' in channels and getattr(user, 'phone_number', None):
             try:
-                sms_ok = SMSService.send_sms(user.phone_number, message, user=user)
-                cls._log_event(user, 'SMS', 'SUCCESS' if sms_ok else 'FAILURE', user.phone_number, title, message)
+                sms_ok = SMSService.send_sms(user.phone_number, sms_text, user=user)
+                cls._log_event(user, 'SMS', 'SUCCESS' if sms_ok else 'FAILURE', user.phone_number, title, sms_text)
             except Exception as e:
-                cls._log_event(user, 'SMS', 'FAILURE', user.phone_number, title, message, error_message=str(e))
+                cls._log_event(user, 'SMS', 'FAILURE', user.phone_number, title, sms_text, error_message=str(e))
 
         return dispatched_notifs
 
@@ -223,6 +263,106 @@ class NotificationDispatcher:
 
         return summary
 
+    # ── 1b. dispatch_sos_escalation ─────────────────────────────────────────
+    @classmethod
+    def dispatch_sos_escalation(cls, incident, reason: str = 'No guardian response within escalation timeout') -> dict:
+        """
+        Escalation Router (Case 2 / Case 4):
+        Dispatches emergency alert escalation to Secondary Guardians, Security Staff, Volunteers, and Admin.
+        """
+        resident = incident.resident
+        cat_name = incident.category.name if incident.category else 'SOS Emergency'
+        address = incident.address or 'Location unavailable'
+        
+        summary = {'secondary_guardians': 0, 'security': 0, 'volunteers': 0, 'admin': 0}
+        processed_users = set()
+        if resident:
+            processed_users.add(resident.id)
+
+        # 1. Secondary Guardians
+        from emergency.models import ResidentGuardian
+        secondary_links = ResidentGuardian.objects.filter(
+            resident=resident, 
+            status='Active', 
+            is_primary=False
+        ).select_related('guardian')
+        
+        for link in secondary_links:
+            g_user = link.guardian
+            if g_user and g_user.is_active and g_user.id not in processed_users:
+                processed_users.add(g_user.id)
+                cls._dispatch_to_user(
+                    user=g_user,
+                    title="⚠️ ESCALATION ALERT: SOS Emergency",
+                    message=f"ESCALATION: {resident.full_name} triggered an SOS. Reason: {reason}. Address: {address}",
+                    category="sos",
+                    incident=incident,
+                    recipient_role="GUARDIAN",
+                    notification_type="INCIDENT_ESCALATED",
+                    priority="CRITICAL",
+                    channels=['IN_APP', 'FCM', 'EMAIL', 'SMS']
+                )
+                summary['secondary_guardians'] += 1
+
+        # 2. Security Staff & Society Managers
+        society = getattr(resident, 'society', None)
+        sec_query = User.objects.filter(role__in=['SECURITY', 'SOCIETY_MANAGER'], is_active=True)
+        if society:
+            sec_query = sec_query.filter(society=society)
+        for sec in sec_query:
+            if sec.id not in processed_users:
+                processed_users.add(sec.id)
+                cls._dispatch_to_user(
+                    user=sec,
+                    title="⚠️ SECURITY ESCALATION: SOS Unresponded",
+                    message=f"ESCALATED SOS #{incident.id}: {resident.full_name} needs urgent assistance at {address}. Reason: {reason}",
+                    category="sos",
+                    incident=incident,
+                    recipient_role="SECURITY",
+                    notification_type="INCIDENT_ESCALATED",
+                    priority="CRITICAL",
+                    channels=['IN_APP', 'FCM', 'EMAIL', 'SMS']
+                )
+                summary['security'] += 1
+
+        # 3. Volunteers
+        volunteers = User.objects.filter(role='VOLUNTEER', is_active=True)
+        for vol in volunteers:
+            if vol.id not in processed_users:
+                processed_users.add(vol.id)
+                cls._dispatch_to_user(
+                    user=vol,
+                    title="⚠️ URGENT: Nearby SOS Escalated",
+                    message=f"ESCALATION: Resident {resident.full_name} requires immediate emergency support near {address}.",
+                    category="sos",
+                    incident=incident,
+                    recipient_role="VOLUNTEER",
+                    notification_type="INCIDENT_ESCALATED",
+                    priority="HIGH",
+                    channels=['IN_APP', 'FCM']
+                )
+                summary['volunteers'] += 1
+
+        # 4. Admin Dashboard
+        admins = User.objects.filter(role='ADMIN', is_active=True)
+        for adm in admins:
+            if adm.id not in processed_users:
+                processed_users.add(adm.id)
+                cls._dispatch_to_user(
+                    user=adm,
+                    title="🚨 ADMIN MONITORING ALERT: SOS Escalated",
+                    message=f"SOS Incident #{incident.id} for {resident.full_name} was ESCALATED ({reason}).",
+                    category="sos",
+                    incident=incident,
+                    recipient_role="ADMIN",
+                    notification_type="INCIDENT_ESCALATED",
+                    priority="CRITICAL",
+                    channels=['IN_APP', 'FCM', 'EMAIL']
+                )
+                summary['admin'] += 1
+
+        return summary
+
     # ── 2. dispatch_guardian_response ───────────────────────────────────────
     @classmethod
     def dispatch_guardian_response(cls, incident, guardian, response_type: str = 'Accepted') -> dict:
@@ -253,7 +393,7 @@ class NotificationDispatcher:
             )
             summary['resident'] += 1
 
-        # Notify Security
+        # Notify Security & Admin
         security_query = User.objects.filter(role__in=['SECURITY', 'ADMIN'], is_active=True)
         for sec in security_query:
             if sec.id not in processed_users:
@@ -270,6 +410,14 @@ class NotificationDispatcher:
                     channels=['IN_APP', 'FCM']
                 )
                 summary['security'] += 1
+
+        # If Guardian Declines/Rejects, automatically trigger Escalation Chain (Case 4)
+        if response_type.lower() in ['rejected', 'declined', 'denied']:
+            escalation_res = cls.dispatch_sos_escalation(
+                incident,
+                reason=f"Primary Guardian {g_name} declined the emergency request."
+            )
+            summary['escalation'] = escalation_res
 
         return summary
 

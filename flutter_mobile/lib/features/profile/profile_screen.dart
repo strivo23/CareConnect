@@ -4,9 +4,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' as import_services;
 import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../core/constants/app_constants.dart';
+import '../../core/services/api_client.dart';
 import '../../core/services/local_storage_service.dart';
+
 import '../../core/theme/app_theme.dart';
 import '../../core/widgets/app_card.dart';
 import '../../services/contacts_repository.dart';
@@ -91,6 +94,15 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 _row('Flat', resident?.flatNumber ?? 'Unavailable'),
                 _row('Status', resident?.status ?? 'Pending'),
                 _row('Approved by', resident?.approvedByName.isNotEmpty == true ? resident!.approvedByName : 'Not approved yet'),
+                const Divider(color: Color(0xFF2E3D52)),
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: const Icon(Icons.language_rounded, color: AppTheme.primaryTeal),
+                  title: const Text('Language Preference', style: TextStyle(fontWeight: FontWeight.w600)),
+                  subtitle: Text('Selected: ${auth.languageCode.toUpperCase()}', style: const TextStyle(color: AppTheme.primaryTeal, fontWeight: FontWeight.bold, fontSize: 12)),
+                  trailing: const Icon(Icons.arrow_forward_ios_rounded, size: 16, color: AppTheme.textSecondary),
+                  onTap: () => context.push('/language'),
+                ),
               ],
             ),
           ),
@@ -236,20 +248,32 @@ class _GuardianCodeSectionState extends State<_GuardianCodeSection> {
   Future<void> _respondLink(int linkId, String action) async {
     try {
       final repo = ContactsRepository();
-      await repo.respondGuardianLink(linkId: linkId, action: action);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(action == 'accept' ? 'Guardian request accepted!' : 'Guardian request declined.'),
-          backgroundColor: action == 'accept' ? AppTheme.success : AppTheme.danger,
-        ),
-      );
-      _fetchGuardianCodeInfo();
+      final res = await repo.respondGuardianLink(linkId: linkId, action: action);
+      final msg = res['message'] as String? ?? (action == 'accept' ? 'Guardian connected successfully.' : 'Guardian request rejected.');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(msg),
+            backgroundColor: action == 'accept' ? AppTheme.success : AppTheme.danger,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+      await _fetchGuardianCodeInfo();
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Failed to process request.'), backgroundColor: AppTheme.danger),
-      );
+      if (mounted) {
+        final errText = ApiClient.extractErrorMessage(e);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(errText),
+            backgroundColor: AppTheme.danger,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
     }
   }
+
 
   void _copyCode() {
     if (_guardianCode != null && _guardianCode!.isNotEmpty) {

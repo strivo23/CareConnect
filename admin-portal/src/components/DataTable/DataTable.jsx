@@ -18,14 +18,14 @@ import {
 import { MdEdit, MdDelete, MdVisibility, MdTimeline } from 'react-icons/md';
 
 const priorityColors = {
-  High: { bg: 'rgba(239, 68, 68, 0.15)', text: '#EF4444', border: 'rgba(239, 68, 68, 0.3)' },
+  High: { bg: 'rgba(233, 63, 65, 0.15)', text: '#E93F41', border: 'rgba(233, 63, 65, 0.3)' },
   Medium: { bg: 'rgba(245, 158, 11, 0.15)', text: '#F59E0B', border: 'rgba(245, 158, 11, 0.3)' },
   Low: { bg: 'rgba(59, 130, 246, 0.15)', text: '#3B82F6', border: 'rgba(59, 130, 246, 0.3)' },
 };
 
 const statusColors = {
   Pending: { bg: 'rgba(245, 158, 11, 0.15)', text: '#F59E0B', border: 'rgba(245, 158, 11, 0.3)' },
-  Accepted: { bg: 'rgba(124, 58, 237, 0.15)', text: '#7C3AED', border: 'rgba(124, 58, 237, 0.3)' },
+  Accepted: { bg: 'rgba(233, 63, 65, 0.15)', text: '#E93F41', border: 'rgba(233, 63, 65, 0.3)' },
   'In Progress': { bg: 'rgba(59, 130, 246, 0.15)', text: '#3B82F6', border: 'rgba(59, 130, 246, 0.3)' },
   Resolved: { bg: 'rgba(34, 197, 94, 0.15)', text: '#22C55E', border: 'rgba(34, 197, 94, 0.3)' },
   Cancelled: { bg: 'rgba(107, 114, 128, 0.15)', text: '#9CA3AF', border: 'rgba(107, 114, 128, 0.3)' },

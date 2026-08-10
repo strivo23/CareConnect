@@ -4,14 +4,18 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../core/theme/app_theme.dart';
 import '../../core/services/api_client.dart';
 import '../../models/notification_model.dart';
+import '../../models/sos_incident_model.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/notifications_provider.dart';
 
 import 'widgets/emergency_location_widget.dart';
+import 'widgets/sender_incident_view.dart';
+import 'widgets/responder_incident_view.dart';
 
 class SOSDetailScreen extends StatefulWidget {
   const SOSDetailScreen({super.key, required this.notification});
@@ -41,6 +45,8 @@ class _SOSDetailScreenState extends State<SOSDetailScreen> {
   bool _isEscalated = false;
   java_timer.Timer? _timer;
 
+  Map<String, dynamic> _incidentData = {};
+
   @override
   void initState() {
     super.initState();
@@ -55,6 +61,18 @@ class _SOSDetailScreenState extends State<SOSDetailScreen> {
     _longitude = widget.notification.longitude;
     _address = widget.notification.address;
     _createdAt = widget.notification.createdAt;
+
+    _incidentData = {
+      'id': widget.notification.incidentId,
+      'resident_name': widget.notification.residentName,
+      'category_name': widget.notification.emergencyCategory,
+      'message': widget.notification.incidentMessage,
+      'status': _currentStatus,
+      'latitude': widget.notification.latitude,
+      'longitude': widget.notification.longitude,
+      'address': widget.notification.address,
+      'created_at': widget.notification.createdAt.toIso8601String(),
+    };
 
     _startEscalationTimer();
     _fetchFullIncidentDetails();
@@ -93,6 +111,7 @@ class _SOSDetailScreenState extends State<SOSDetailScreen> {
       if (response.statusCode == 200 && response.data != null) {
         final data = response.data as Map<String, dynamic>;
         setState(() {
+          _incidentData = Map<String, dynamic>.from(data);
           _residentName = data['resident_name']?.toString() ?? _residentName;
           _categoryName = data['category_name']?.toString() ?? _categoryName;
           _message = data['message']?.toString() ?? _message;
@@ -273,19 +292,64 @@ class _SOSDetailScreenState extends State<SOSDetailScreen> {
     }
   }
 
+  List<Map<String, dynamic>> _timelineItems = [];
+
+  Future<void> _fetchTimeline() async {
+    final incidentId = widget.notification.incidentId;
+    if (incidentId <= 0) return;
+    try {
+      dynamic resData;
+      try {
+        final res = await ApiClient.instance.get('/api/incident/$incidentId/timeline/');
+        resData = res.data;
+      } catch (_) {
+        final res = await ApiClient.instance.get('/api/sos/incidents/$incidentId/timeline/');
+        resData = res.data;
+      }
+
+      if (resData != null && resData['timeline'] is List) {
+        final List items = resData['timeline'];
+        if (mounted) {
+          setState(() {
+            _timelineItems = items.map((e) => Map<String, dynamic>.from(e as Map)).toList();
+          });
+        }
+      }
+    } catch (_) {}
+  }
+
   Future<void> _handleRejectIncident() async {
-    final bool? confirm = await showDialog<bool>(
+    final reasonController = TextEditingController();
+    final String? reason = await showDialog<String>(
       context: context,
       builder: (dialogCtx) => AlertDialog(
         title: Text('Reject Emergency Alert', style: GoogleFonts.outfit(fontWeight: FontWeight.bold)),
-        content: Text(
-          'Are you sure you want to reject this SOS? It will escalate immediately to the next guardian or emergency contact.',
-          style: GoogleFonts.inter(fontSize: 14),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Please provide a reason for being unable to respond. It will immediately escalate to the next responder/security.',
+              style: GoogleFonts.inter(fontSize: 14),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: reasonController,
+              decoration: InputDecoration(
+                hintText: 'Reason (e.g. Out of town, In a meeting)',
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+              ),
+            ),
+          ],
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(dialogCtx, false), child: const Text('Cancel')),
+          TextButton(onPressed: () => Navigator.pop(dialogCtx, null), child: const Text('Cancel')),
           ElevatedButton(
-            onPressed: () => Navigator.pop(dialogCtx, true),
+            onPressed: () {
+              final text = reasonController.text.trim();
+              Navigator.pop(dialogCtx, text.isNotEmpty ? text : 'Unable to respond');
+            },
             style: ElevatedButton.styleFrom(backgroundColor: AppTheme.danger),
             child: const Text('Reject & Escalate', style: TextStyle(color: Colors.white)),
           ),
@@ -293,7 +357,7 @@ class _SOSDetailScreenState extends State<SOSDetailScreen> {
       ),
     );
 
-    if (confirm != true) return;
+    if (reason == null) return;
 
     setState(() {
       _isLoading = true;
@@ -303,7 +367,7 @@ class _SOSDetailScreenState extends State<SOSDetailScreen> {
     try {
       final response = await ApiClient.instance.post(
         '/api/sos/incidents/${widget.notification.incidentId}/reject/',
-        data: {'reason': 'Rejected by guardian'},
+        data: {'reason': reason},
       );
 
       if (response.statusCode == 200) {
@@ -313,23 +377,27 @@ class _SOSDetailScreenState extends State<SOSDetailScreen> {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
-              content: Text('SOS alert rejected. Escalated immediately.'),
+              content: Text('SOS alert rejected. Immediate escalation triggered.'),
               backgroundColor: Colors.orange,
               behavior: SnackBarBehavior.floating,
             ),
           );
         }
+        await _fetchTimeline();
       }
     } catch (e) {
       setState(() {
         _errorMessage = 'Error rejecting SOS: $e';
       });
     } finally {
-      setState(() {
-        _isLoading = false;
-      });
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
     }
   }
+
 
   Future<void> _callResident() async {
     final phone = _residentPhone ?? '911';
@@ -367,11 +435,14 @@ class _SOSDetailScreenState extends State<SOSDetailScreen> {
     }
   }
 
-  Color _getStatusColor(String status) {
+  Color _getStatusColor(String? status) {
+    if (status == null) return Colors.grey;
     switch (status) {
       case 'Pending':
         return Colors.orange;
       case 'Accepted':
+      case 'Active':
+      case 'Assigned':
         return Colors.blue;
       case 'In Progress':
         return Colors.purple;
@@ -384,17 +455,125 @@ class _SOSDetailScreenState extends State<SOSDetailScreen> {
     }
   }
 
+
+  Future<void> _cancelSOS() async {
+    final incidentId = widget.notification.incidentId;
+    if (incidentId <= 0) return;
+    final bool? confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text('Cancel SOS Emergency', style: GoogleFonts.outfit(fontWeight: FontWeight.bold)),
+        content: Text('Are you sure you want to cancel your SOS emergency alert?', style: GoogleFonts.inter(fontSize: 13)),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('No, keep active')),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+            child: const Text('Yes, Cancel SOS'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true) {
+      setState(() => _isLoading = true);
+      try {
+        await ApiClient.instance.patch(
+          '/api/sos/incidents/$incidentId/cancel/',
+          data: {'remarks': 'Cancelled by resident'},
+        );
+        await _fetchFullIncidentDetails();
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Emergency SOS cancelled.'), backgroundColor: Colors.red, behavior: SnackBarBehavior.floating),
+          );
+        }
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Cancel error: $e'), backgroundColor: Colors.red),
+          );
+        }
+      } finally {
+        if (mounted) setState(() => _isLoading = false);
+      }
+    }
+  }
+
+  Future<void> _declineSOS() async {
+    final incidentId = widget.notification.incidentId;
+    if (incidentId <= 0) return;
+    final reasonCtrl = TextEditingController();
+    final bool? confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text('Decline SOS Alert', style: GoogleFonts.outfit(fontWeight: FontWeight.bold)),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text('Declining will escalate this alert to the next emergency tier.', style: GoogleFonts.inter(fontSize: 13)),
+            const SizedBox(height: 12),
+            TextField(
+              controller: reasonCtrl,
+              decoration: const InputDecoration(labelText: 'Reason (Optional)', hintText: 'Unable to respond...'),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+            child: const Text('Decline SOS'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true) {
+      setState(() => _isLoading = true);
+      try {
+        await ApiClient.instance.post(
+          '/api/sos/incidents/$incidentId/reject/',
+          data: {'reason': reasonCtrl.text.trim().isNotEmpty ? reasonCtrl.text.trim() : 'Unable to respond'},
+        );
+        await _fetchFullIncidentDetails();
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('SOS Alert declined.'), backgroundColor: Colors.orange, behavior: SnackBarBehavior.floating),
+          );
+        }
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Decline error: $e'), backgroundColor: Colors.red),
+          );
+        }
+      } finally {
+        if (mounted) setState(() => _isLoading = false);
+      }
+    }
+  }
+
+  void _navigateToChat() {
+    final incidentId = widget.notification.incidentId;
+    if (incidentId > 0) {
+      context.push('/emergency-chat', extra: {'id': incidentId});
+    }
+  }
+
+  void _shareLocation() {
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Sharing emergency location with responders...'), behavior: SnackBarBehavior.floating),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
-    final user = context.watch<AuthProvider>().user;
-    final role = user?.role ?? 'RESIDENT';
-    final isGuardianOrStaff = role == 'ADMIN' || role == 'SECURITY' || role == 'GUARDIAN' || role == 'SOCIETY_MANAGER' || role == 'STAFF' || role == 'VOLUNTEER';
-    final isOwner = user != null && widget.notification.message.contains(user.fullName.split(' ').first);
     final isDark = Theme.of(context).brightness == Brightness.dark;
-
-    final mins = _escalationSecondsRemaining ~/ 60;
-    final secs = _escalationSecondsRemaining % 60;
-    final timeStr = '${mins.toString().padLeft(2, '0')}:${secs.toString().padLeft(2, '0')}';
+    final model = SOSIncidentModel.fromJson(_incidentData);
 
     return Scaffold(
       backgroundColor: isDark ? const Color(0xFF111418) : const Color(0xFFF8FAFC),
@@ -406,7 +585,7 @@ class _SOSDetailScreenState extends State<SOSDetailScreen> {
           onPressed: () => Navigator.pop(context),
         ),
         title: Text(
-          'SOS Alert Details',
+          model.isSender ? 'My Emergency SOS' : 'SOS Alert Details',
           style: GoogleFonts.outfit(
             color: Theme.of(context).colorScheme.onSurface,
             fontWeight: FontWeight.bold,
@@ -415,359 +594,23 @@ class _SOSDetailScreenState extends State<SOSDetailScreen> {
         ),
         centerTitle: true,
       ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(20),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Escalation Timeout Banner if escalated
-            if (_isEscalated || _escalationSecondsRemaining == 0) ...[
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.all(16),
-                margin: const EdgeInsets.only(bottom: 20),
-                decoration: BoxDecoration(
-                  color: Colors.amber.shade100,
-                  borderRadius: BorderRadius.circular(16),
-                  border: Border.all(color: Colors.amber.shade400, width: 1.5),
-                ),
-                child: Row(
-                  children: [
-                    const Icon(Icons.warning_amber_rounded, color: Colors.amber, size: 28),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Text(
-                        'This incident has been escalated.',
-                        style: GoogleFonts.outfit(
-                          fontSize: 15,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.brown.shade900,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ] else if (_currentStatus == 'Pending') ...[
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.all(14),
-                margin: const EdgeInsets.only(bottom: 20),
-                decoration: BoxDecoration(
-                  color: Colors.blue.shade50,
-                  borderRadius: BorderRadius.circular(16),
-                  border: Border.all(color: Colors.blue.shade200),
-                ),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Row(
-                      children: [
-                        const Icon(Icons.timer_outlined, color: Colors.blue, size: 22),
-                        const SizedBox(width: 8),
-                        Text(
-                          'Auto-escalation timer:',
-                          style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w600, color: Colors.blue.shade900),
-                        ),
-                      ],
-                    ),
-                    Text(
-                      timeStr,
-                      style: GoogleFonts.outfit(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.blue.shade900),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-
-            // Current Status Card
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(18),
-              decoration: BoxDecoration(
-                color: Theme.of(context).colorScheme.surface,
-                borderRadius: BorderRadius.circular(20),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.02),
-                    blurRadius: 10,
-                    offset: const Offset(0, 4),
-                  ),
-                ],
-                border: Border.all(color: isDark ? Colors.white10 : Colors.grey.shade100),
-              ),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Incident Status',
-                        style: GoogleFonts.inter(
-                          fontSize: 12,
-                          fontWeight: FontWeight.bold,
-                          color: isDark ? Colors.white38 : Colors.grey.shade400,
-                        ),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        _currentStatus!,
-                        style: GoogleFonts.outfit(
-                          fontSize: 22,
-                          fontWeight: FontWeight.w800,
-                          color: Theme.of(context).colorScheme.onSurface,
-                        ),
-                      ),
-                    ],
-                  ),
-                  Container(
-                    width: 14,
-                    height: 14,
-                    decoration: BoxDecoration(
-                      color: _getStatusColor(_currentStatus!),
-                      shape: BoxShape.circle,
-                      boxShadow: [
-                        BoxShadow(
-                          color: _getStatusColor(_currentStatus!).withValues(alpha: 0.4),
-                          blurRadius: 8,
-                          offset: const Offset(0, 2),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 20),
-
-            // Incident Details Card
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(20),
-              decoration: BoxDecoration(
-                color: Theme.of(context).colorScheme.surface,
-                borderRadius: BorderRadius.circular(24),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.02),
-                    blurRadius: 10,
-                    offset: const Offset(0, 4),
-                  ),
-                ],
-                border: Border.all(color: isDark ? Colors.white10 : Colors.grey.shade100),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Text(
-                        'SOS Information',
-                        style: GoogleFonts.outfit(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w800,
-                          color: Theme.of(context).colorScheme.onSurface,
-                        ),
-                      ),
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                        decoration: BoxDecoration(
-                          color: AppTheme.danger.withValues(alpha: 0.1),
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: Text(
-                          _priority ?? 'HIGH',
-                          style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.bold, color: AppTheme.danger),
-                        ),
-                      ),
-                    ],
-                  ),
-                  Divider(height: 30, color: isDark ? Colors.white10 : const Color(0xFFF1F5F9)),
-
-                  _buildDetailRow(
-                    label: 'Resident Name',
-                    value: (_residentName != null && _residentName!.isNotEmpty)
-                        ? _residentName!
-                        : 'Unknown Resident',
-                    icon: Icons.person_rounded,
-                  ),
-                  _buildDetailRow(
-                    label: 'Emergency Category',
-                    value: (_categoryName != null && _categoryName!.isNotEmpty)
-                        ? _categoryName!
-                        : 'SOS Emergency',
-                    icon: Icons.emergency_rounded,
-                    iconColor: AppTheme.danger,
-                  ),
-                  _buildDetailRow(
-                    label: 'Triggered Time',
-                    value: DateFormat('dd MMM yyyy, hh:mm a').format(_createdAt ?? widget.notification.createdAt),
-                    icon: Icons.access_time_filled_rounded,
-                  ),
-                  _buildDetailRow(
-                    label: 'Description Message',
-                    value: (_message != null && _message!.isNotEmpty)
-                        ? _message!
-                        : 'Immediate help requested.',
-                    icon: Icons.chat_bubble_rounded,
-                    isLast: true,
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 20),
-
-            // Emergency Location Widget
-            EmergencyLocationWidget(
-              latitude: _latitude ?? widget.notification.latitude,
-              longitude: _longitude ?? widget.notification.longitude,
-              address: _address ?? widget.notification.address,
-            ),
-
-            const SizedBox(height: 20),
-
-            if (_errorMessage != null) ...[
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.all(14),
-                decoration: BoxDecoration(
-                  color: Colors.red.shade50,
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: Colors.red.shade100),
-                ),
-                child: Text(
-                  _errorMessage!,
-                  style: GoogleFonts.inter(
-                    color: Colors.red.shade900,
-                    fontWeight: FontWeight.w600,
-                    fontSize: 13,
-                  ),
-                ),
-              ),
-              const SizedBox(height: 20),
-            ],
-
-            // Action Buttons
-            if (_isLoading)
-              const Center(
-                child: CircularProgressIndicator(color: AppTheme.danger),
+      body: RefreshIndicator(
+        onRefresh: _fetchFullIncidentDetails,
+        child: model.isSender
+            ? SenderIncidentView(
+                incident: model,
+                onCancelSOS: _cancelSOS,
+                onRefresh: _fetchFullIncidentDetails,
               )
-            else ...[
-              // Primary Guardian & Responder Action Grid: Accept, Reject, Call Resident, Navigate
-              if (isGuardianOrStaff && _currentStatus == 'Pending') ...[
-                Row(
-                  children: [
-                    Expanded(
-                      child: ElevatedButton.icon(
-                        onPressed: () => _handleAcceptWithETA(),
-                        icon: const Icon(Icons.check_circle_rounded, color: Colors.white, size: 20),
-                        label: Text('Accept', style: GoogleFonts.inter(fontWeight: FontWeight.bold, fontSize: 15)),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.green.shade600,
-                          foregroundColor: Colors.white,
-                          padding: const EdgeInsets.symmetric(vertical: 14),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                          elevation: 0,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: ElevatedButton.icon(
-                        onPressed: () => _handleRejectIncident(),
-                        icon: const Icon(Icons.cancel_outlined, color: Colors.white, size: 20),
-                        label: Text('Reject', style: GoogleFonts.inter(fontWeight: FontWeight.bold, fontSize: 15)),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.red.shade600,
-                          foregroundColor: Colors.white,
-                          padding: const EdgeInsets.symmetric(vertical: 14),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                          elevation: 0,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 12),
-                Row(
-                  children: [
-                    Expanded(
-                      child: OutlinedButton.icon(
-                        onPressed: () => _callResident(),
-                        icon: const Icon(Icons.phone_in_talk_rounded, size: 20),
-                        label: Text('Call Resident', style: GoogleFonts.inter(fontWeight: FontWeight.bold, fontSize: 14)),
-                        style: OutlinedButton.styleFrom(
-                          padding: const EdgeInsets.symmetric(vertical: 14),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: OutlinedButton.icon(
-                        onPressed: () => _navigateToLocation(),
-                        icon: const Icon(Icons.near_me_rounded, size: 20),
-                        label: Text('Navigate', style: GoogleFonts.inter(fontWeight: FontWeight.bold, fontSize: 14)),
-                        style: OutlinedButton.styleFrom(
-                          padding: const EdgeInsets.symmetric(vertical: 14),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 16),
-              ],
-
-              if (isGuardianOrStaff && _currentStatus == 'Accepted') ...[
-                ElevatedButton.icon(
-                  onPressed: () => _updateStatus('in-progress', 'In Progress'),
-                  icon: const Icon(Icons.pending_actions_rounded, color: Colors.white),
-                  label: Text('Mark In Progress', style: GoogleFonts.inter(fontWeight: FontWeight.bold)),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.purple,
-                    foregroundColor: Colors.white,
-                    minimumSize: const Size(double.infinity, 54),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                    elevation: 0,
-                  ),
-                ),
-                const SizedBox(height: 12),
-              ],
-
-              if (isGuardianOrStaff && _currentStatus == 'In Progress') ...[
-                ElevatedButton.icon(
-                  onPressed: () => _updateStatus('resolve', 'Resolved'),
-                  icon: const Icon(Icons.done_all_rounded, color: Colors.white),
-                  label: Text('Resolve SOS Alert', style: GoogleFonts.inter(fontWeight: FontWeight.bold)),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.green,
-                    foregroundColor: Colors.white,
-                    minimumSize: const Size(double.infinity, 54),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                    elevation: 0,
-                  ),
-                ),
-                const SizedBox(height: 12),
-              ],
-
-              if ((isGuardianOrStaff || isOwner) && _currentStatus != 'Resolved' && _currentStatus != 'Cancelled')
-                OutlinedButton.icon(
-                  onPressed: () => _updateStatus('cancel', 'Cancelled'),
-                  icon: const Icon(Icons.cancel_outlined, color: AppTheme.danger),
-                  label: Text('Cancel SOS Alert', style: GoogleFonts.inter(fontWeight: FontWeight.bold)),
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: AppTheme.danger,
-                    side: const BorderSide(color: AppTheme.danger, width: 1.5),
-                    minimumSize: const Size(double.infinity, 54),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                  ),
-                ),
-            ]
-          ],
-        ),
+            : ResponderIncidentView(
+                incident: model,
+                onAccept: _handleAcceptWithETA,
+                onDecline: _declineSOS,
+                onChat: _navigateToChat,
+                onCall: _callResident,
+                onNavigate: _navigateToLocation,
+                onShareLocation: _shareLocation,
+              ),
       ),
     );
   }

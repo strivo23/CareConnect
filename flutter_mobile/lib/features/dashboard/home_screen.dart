@@ -9,6 +9,7 @@ import '../../core/widgets/offline_banner.dart';
 import '../../providers/app_state_provider.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/emergency_provider.dart';
+import '../../core/localization/app_localizations.dart';
 import '../../services/location_service.dart';
 
 class HomeScreen extends StatelessWidget {

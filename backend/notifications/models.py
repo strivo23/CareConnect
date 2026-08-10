@@ -72,10 +72,28 @@ class NotificationLog(models.Model):
     title = models.CharField(max_length=255, blank=True)
     message = models.TextField()
     error_message = models.TextField(blank=True, null=True)
+    failure_reason = models.TextField(blank=True, null=True)
+    provider_response = models.TextField(blank=True, null=True)
+    retry_count = models.IntegerField(default=0)
+    incident = models.ForeignKey(
+        'sos.SOSIncident',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='delivery_logs'
+    )
     created_at = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):
         return f"{self.channel} log to {self.recipient} ({self.status})"
+
+    class Meta:
+        ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['channel']),
+            models.Index(fields=['status']),
+            models.Index(fields=['created_at']),
+        ]
 
 
 class SMSLog(models.Model):

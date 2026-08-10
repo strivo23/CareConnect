@@ -12,7 +12,9 @@ from .views import (
     MarkNotificationReadAPIView,
     MarkAllNotificationsReadAPIView,
     NotificationHistoryAPIView,
+    GuardianNotificationsAPIView,
 )
+from sos.analytics_views import NotificationDeliveryTrackingAPIView
 
 router = DefaultRouter()
 router.register('devices', FCMDeviceViewSet, basename='device')
@@ -28,7 +30,10 @@ urlpatterns = [
     path('read-all/', MarkAllNotificationsReadAPIView.as_view(), name='notification-read-all'),
     path('count/', UnreadCountAPIView.as_view(), name='notification-count'),
     path('history/', NotificationHistoryAPIView.as_view(), name='notification-history'),
+    path('guardian/', GuardianNotificationsAPIView.as_view(), name='notification-guardian'),
     path('register-token/', FCMDeviceRegisterAPIView.as_view(), name='fcm-register-token'),
+    path('delivery-tracking/', NotificationDeliveryTrackingAPIView.as_view(), name='notification-delivery-tracking'),
 
     path('', include(router.urls)),
 ]
+

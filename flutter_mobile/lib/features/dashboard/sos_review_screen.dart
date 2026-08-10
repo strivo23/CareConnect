@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:go_router/go_router.dart';
-import 'package:dio/dio.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/services/api_client.dart';
 import '../../services/emergency_repository.dart';
@@ -20,6 +19,7 @@ class _SOSReviewScreenState extends State<SOSReviewScreen> {
   bool _isSending = false;
 
   Future<void> _submitSOS() async {
+    if (_isSending) return;
     setState(() => _isSending = true);
     try {
       final categoryRaw = widget.data['category'];
@@ -51,16 +51,15 @@ class _SOSReviewScreenState extends State<SOSReviewScreen> {
       }
 
       final body = <String, dynamic>{
-        'message': widget.data['message'],
+        'message': widget.data['message'] ?? 'Immediate assistance requested.',
         'latitude': latVal,
         'longitude': lngVal,
-        'address': widget.data['address'],
+        'address': widget.data['address'] ?? 'Location unavailable',
         'priority': widget.data['priority'] ?? 'HIGH',
       };
       if (categoryId != null) {
         body['category'] = categoryId;
       }
-
 
       debugPrint('[SOS DISPATCH REQUEST] URL: /api/sos/send/ Data: $body');
 
@@ -70,12 +69,15 @@ class _SOSReviewScreenState extends State<SOSReviewScreen> {
       );
 
       if (response.statusCode == 201) {
-        final resData = response.data as Map<String, dynamic>;
+        final resData = Map<String, dynamic>.from(response.data as Map);
         final incidentId = resData['id'] is int
             ? resData['id'] as int
             : int.tryParse(resData['id'].toString()) ?? 0;
 
         final voiceFilePath = widget.data['voiceFilePath']?.toString();
+        final voiceDuration = widget.data['voice_duration'] is int
+            ? widget.data['voice_duration'] as int
+            : int.tryParse(widget.data['voice_duration']?.toString() ?? '');
         final emergencyDescription = widget.data['emergency_description']?.toString() ?? widget.data['message']?.toString();
 
         if (incidentId > 0 && ((voiceFilePath != null && voiceFilePath.isNotEmpty) || (emergencyDescription != null && emergencyDescription.isNotEmpty))) {
@@ -85,6 +87,7 @@ class _SOSReviewScreenState extends State<SOSReviewScreen> {
               incidentId: incidentId,
               emergencyDescription: emergencyDescription,
               voiceFilePath: voiceFilePath,
+              voiceDuration: voiceDuration,
             );
           } catch (uploadErr) {
             debugPrint('Failed to attach voice/text message: $uploadErr');
@@ -105,6 +108,7 @@ class _SOSReviewScreenState extends State<SOSReviewScreen> {
               'id': resData['id'],
               'status': resData['status'] ?? 'Pending',
               'created_at': resData['created_at'] ?? '',
+              'notifications_summary': resData['notifications_summary'] ?? {},
             },
           );
         }
@@ -113,28 +117,7 @@ class _SOSReviewScreenState extends State<SOSReviewScreen> {
       }
 
     } catch (e) {
-      String userErrorMsg = 'Failed to dispatch SOS emergency alert.';
-      if (e is DioException) {
-        final resData = e.response?.data;
-        if (resData is Map) {
-          final errList = <String>[];
-          resData.forEach((key, val) {
-            if (val is List) {
-              errList.add('$key: ${val.join(", ")}');
-            } else {
-              errList.add('$key: $val');
-            }
-          });
-          if (errList.isNotEmpty) {
-            userErrorMsg = errList.join(' | ');
-          }
-        } else if (resData != null) {
-          userErrorMsg = resData.toString();
-        }
-      } else {
-        userErrorMsg = e.toString();
-      }
-
+      final userErrorMsg = ApiClient.extractErrorMessage(e);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -151,17 +134,25 @@ class _SOSReviewScreenState extends State<SOSReviewScreen> {
     }
   }
 
-
-
   @override
   Widget build(BuildContext context) {
-    final category = widget.data['category'] as Map<String, dynamic>;
+    Map<String, dynamic> category = {};
+    final categoryRaw = widget.data['category'];
+    if (categoryRaw is Map) {
+      category = Map<String, dynamic>.from(categoryRaw);
+    }
+
     final priority = widget.data['priority']?.toString() ?? 'HIGH';
     final message = widget.data['message']?.toString() ?? '';
-    final latitude = widget.data['latitude'] as double;
-    final longitude = widget.data['longitude'] as double;
+    final voiceFilePath = widget.data['voiceFilePath']?.toString();
+    final voiceDuration = widget.data['voice_duration']?.toString() ?? '0';
+    final latRaw = widget.data['latitude'];
+    final lngRaw = widget.data['longitude'];
+    final double latitude = latRaw is double ? latRaw : (double.tryParse(latRaw?.toString() ?? '') ?? 0.0);
+    final double longitude = lngRaw is double ? lngRaw : (double.tryParse(lngRaw?.toString() ?? '') ?? 0.0);
     final address = widget.data['address']?.toString() ?? '';
     final isDark = Theme.of(context).brightness == Brightness.dark;
+
 
     return Scaffold(
       backgroundColor: isDark ? const Color(0xFF111418) : const Color(0xFFF8FAFC),
@@ -262,6 +253,14 @@ class _SOSReviewScreenState extends State<SOSReviewScreen> {
                     label: 'Emergency Message',
                     value: message.isNotEmpty ? message : 'Immediate assistance requested.',
                   ),
+                  if (voiceFilePath != null && voiceFilePath.isNotEmpty) ...[
+                    Divider(height: 24, color: isDark ? Colors.white10 : const Color(0xFFF1F5F9)),
+                    _buildReviewRow(
+                      label: 'Voice Recording',
+                      value: '🎙️ Attached (${voiceDuration}s voice message)',
+                      valueColor: Colors.green,
+                    ),
+                  ],
                   Divider(height: 24, color: isDark ? Colors.white10 : const Color(0xFFF1F5F9)),
                   _buildReviewRow(
                     label: 'Coordinates',

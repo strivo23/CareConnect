@@ -25,10 +25,8 @@ from notifications.notification_service import (
     SMSService,
 )
 from notifications.dispatcher import NotificationDispatcher
-from .models import SOSIncident, EmergencyCategory, EscalationConfig, EscalationLog
+from .models import SOSIncident, EmergencyCategory, EscalationConfig, EscalationLog, AssignmentLog, IncidentStatusLog, IncidentChatMessage, IncidentResponseUpdate
 from emergency.models import Guardian, EmergencyContact
-
-
 
 
 def haversine(lat1, lon1, lat2, lon2):
@@ -42,14 +40,22 @@ def haversine(lat1, lon1, lat2, lon2):
     c = 2 * math.atan2(math.sqrt(a), math.sqrt(1-a))
     return R * c
 
+
+class AlreadyAssignedException(Exception):
+    """Raised when an SOS incident is already assigned to a responder."""
+    pass
+
+
 # Valid status transitions: current_status -> allowed_next_statuses
 STATUS_TRANSITIONS = {
-    "Pending":     ["Accepted", "Cancelled"],
-    "Accepted":    ["In Progress", "Cancelled"],
+    "Pending":     ["Accepted", "Assigned", "Cancelled"],
+    "Accepted":    ["In Progress", "Assigned", "Cancelled"],
+    "Assigned":    ["In Progress", "Cancelled"],
     "In Progress": ["Resolved", "Cancelled"],
     "Resolved":    [],           # terminal state
     "Cancelled":   [],           # terminal state
 }
+
 
 
 class SOSService:
@@ -59,17 +65,37 @@ class SOSService:
     """
 
     @staticmethod
-    def reverse_geocode(latitude, longitude) -> str:
+    def reverse_geocode_details(latitude, longitude) -> dict:
         """
-        Reverse geocodes (lat, lon) to a readable address using Nominatim API.
-        Includes retry logic and returns 'Location could not be resolved' on failure.
+        Reverse geocodes (lat, lon) using Nominatim API and returns structured components:
+        {
+          "address": "...",
+          "city": "...",
+          "state": "...",
+          "country": "...",
+          "pincode": "..."
+        }
+        Does not block on failure.
         """
+        default_res = {
+            "address": "Location could not be resolved",
+            "city": "",
+            "state": "",
+            "country": "",
+            "pincode": ""
+        }
         if latitude is None or longitude is None:
-            return "Location could not be resolved"
-            
+            return default_res
+
         import sys
         if 'test' in sys.argv:
-            return f"Mock Street, {latitude}, {longitude}, Test City, Test State, 123456, India"
+            return {
+                "address": f"Mock Street, {latitude}, {longitude}, Test City, Test State, 123456, India",
+                "city": "Test City",
+                "state": "Test State",
+                "country": "India",
+                "pincode": "123456"
+            }
 
         import requests
 
@@ -83,78 +109,109 @@ class SOSService:
             "User-Agent": "CareConnect/1.0 (Student Project)"
         }
 
-
         for attempt in range(2):
             try:
                 response = requests.get(url, params=params, headers=headers, timeout=5)
                 if response.status_code == 200:
                     data = response.json()
                     addr = data.get("address", {})
-                    if addr:
-                        parts = []
-                        street = addr.get("road") or addr.get("house_number") or addr.get("pedestrian") or addr.get("suburb")
-                        if street:
-                            parts.append(street)
-                        area = addr.get("neighbourhood") or addr.get("residential") or addr.get("subdistrict") or addr.get("county")
-                        if area and area not in parts:
-                            parts.append(area)
-                        city = addr.get("city") or addr.get("town") or addr.get("village") or addr.get("city_district")
-                        if city and city not in parts:
-                            parts.append(city)
-                        state = addr.get("state")
-                        if state and state not in parts:
-                            parts.append(state)
-                        postcode = addr.get("postcode")
-                        if postcode and postcode not in parts:
-                            parts.append(postcode)
-                        country = addr.get("country")
-                        if country and country not in parts:
-                            parts.append(country)
+                    city = addr.get("city") or addr.get("town") or addr.get("village") or addr.get("city_district") or ""
+                    state = addr.get("state") or addr.get("state_district") or ""
+                    country = addr.get("country") or ""
+                    pincode = addr.get("postcode") or ""
 
-                        if parts:
-                            return ", ".join(parts)
+                    parts = []
+                    street = addr.get("road") or addr.get("house_number") or addr.get("pedestrian") or addr.get("suburb")
+                    if street:
+                        parts.append(street)
+                    area = addr.get("neighbourhood") or addr.get("residential") or addr.get("subdistrict") or addr.get("county")
+                    if area and area not in parts:
+                        parts.append(area)
+                    if city and city not in parts:
+                        parts.append(city)
+                    if state and state not in parts:
+                        parts.append(state)
+                    if pincode and pincode not in parts:
+                        parts.append(pincode)
+                    if country and country not in parts:
+                        parts.append(country)
 
-                    display_name = data.get("display_name")
-                    if display_name:
-                        return display_name
+                    formatted_addr = ", ".join(parts) if parts else data.get("display_name", "Location could not be resolved")
+                    return {
+                        "address": formatted_addr,
+                        "city": city,
+                        "state": state,
+                        "country": country,
+                        "pincode": pincode
+                    }
             except Exception as e:
                 print(f"[REVERSE GEOCODE] Attempt {attempt+1} failed: {e}", flush=True)
 
-        return "Location could not be resolved"
+        return default_res
+
+    @staticmethod
+    def reverse_geocode(latitude, longitude) -> str:
+        """
+        Reverse geocodes (lat, lon) to a readable address string.
+        """
+        res = SOSService.reverse_geocode_details(latitude, longitude)
+        return res["address"]
 
     @staticmethod
     def create_incident(user, validated_data: dict) -> SOSIncident:
         """
         Create a new SOS incident for *user*.
 
+        - Enforces active resident check
+        - Checks for recent duplicate active SOS requests
         - Forces status = 'Pending'
         - Creates an 'Emergency Alert Received' notification for the resident
-        - Notifies primary guardian immediately
-        - Schedules escalation steps
+        - Notifies primary guardian, security, and volunteers
         """
+        if not user.is_active:
+            raise ValueError("Resident account is disabled or unapproved.")
+
+        # Duplicate request check
+        recent_duplicate = SOSIncident.objects.filter(
+            resident=user,
+            status__in=["Pending", "Accepted", "In Progress"],
+            created_at__gte=timezone.now() - timezone.timedelta(seconds=30)
+        ).first()
+        if recent_duplicate:
+            raise ValueError(f"An active SOS incident (#{recent_duplicate.id}) is already in progress. Please wait before sending another.")
+
         validated_data["resident"] = user
         validated_data["status"] = "Pending"
 
-        # Reverse geocode if coordinates are present and address not supplied or placeholder
+        # Reverse geocode if coordinates are present
+        lat = validated_data.get("latitude")
+        lng = validated_data.get("longitude")
         addr_val = validated_data.get("address")
-        if (not addr_val or addr_val in ["Address not resolved", "Address unavailable", "Location unavailable", ""]) and validated_data.get("latitude") is not None and validated_data.get("longitude") is not None:
-            validated_data["address"] = SOSService.reverse_geocode(
-                validated_data["latitude"], validated_data["longitude"]
-            )
-
+        if lat is not None and lng is not None:
+            geo_details = SOSService.reverse_geocode_details(lat, lng)
+            if not addr_val or addr_val in ["Address not resolved", "Address unavailable", "Location unavailable", ""]:
+                validated_data["address"] = geo_details["address"]
+            if not validated_data.get("city"):
+                validated_data["city"] = geo_details["city"]
+            if not validated_data.get("state"):
+                validated_data["state"] = geo_details["state"]
+            if not validated_data.get("country"):
+                validated_data["country"] = geo_details["country"]
+            if not validated_data.get("pincode"):
+                validated_data["pincode"] = geo_details["pincode"]
 
         with transaction.atomic():
             incident = SOSIncident.objects.create(**validated_data)
             
             # Log SOS Created
-            print("SOS Created")
+            print("SOS Created", flush=True)
 
             # Auto-create notification for the resident
             Notification.objects.create(
                 user=user,
                 title="Emergency Alert Received",
                 message=(
-                    f"Your SOS incident ({incident.category.name}) has been received "
+                    f"Your SOS incident ({incident.category.name if incident.category else 'SOS Emergency'}) has been received "
                     f"and is being processed. Status: Pending."
                 ),
                 category="sos",
@@ -245,31 +302,65 @@ class SOSService:
                         scheduled_at=now + timezone.timedelta(seconds=window * step_offset)
                     )
 
-            # Dispatch via central NotificationDispatcher
-            NotificationDispatcher.dispatch_sos_created(incident)
-            SOSService._notify_primary_guardians(incident)
-            notify_guardians(incident)
+            # Dispatch notifications safely
+            try:
+                NotificationDispatcher.dispatch_sos_created(incident)
+                SOSService._notify_primary_guardians(incident)
+                notify_guardians(incident)
+            except Exception as notif_err:
+                print(f"[SOSService] Notification dispatch warning: {notif_err}", flush=True)
+
+            # Create SYSTEM chat message for incident creation
+            try:
+                IncidentChatService.create_system_message(
+                    incident,
+                    f"Emergency SOS triggered by {user.full_name or user.email}."
+                )
+            except Exception as chat_err:
+                print(f"[SOSService] System chat message warning: {chat_err}", flush=True)
 
             # Notify nearby volunteers if coordinates are available
+            volunteer_count = 0
             if incident.latitude is not None and incident.longitude is not None and config.notify_volunteers:
-                from accounts.models import VolunteerProfile
-                volunteers = VolunteerProfile.objects.filter(is_online=True, latitude__isnull=False, longitude__isnull=False).select_related('user')
-                for vol in volunteers:
-                    dist = haversine(incident.latitude, incident.longitude, vol.latitude, vol.longitude)
-                    if dist <= vol.visibility_radius:
-                        NotificationEngineService.dispatch_notification(
-                            user=vol.user,
-                            title="🚨 Nearby SOS Community Broadcast",
-                            message=f"Urgent: {incident.resident.full_name} needs help nearby. Distance: {dist:.0f}m.",
-                            category="sos",
-                            incident=incident
-                        )
-                        if vol.user.email:
-                            NotificationEngineService.send_sos_email(
-                                email=vol.user.email,
-                                incident=incident,
-                                user=vol.user
+                try:
+                    from accounts.models import VolunteerProfile
+                    volunteers = VolunteerProfile.objects.filter(is_online=True, latitude__isnull=False, longitude__isnull=False).select_related('user')
+                    for vol in volunteers:
+                        dist = haversine(incident.latitude, incident.longitude, vol.latitude, vol.longitude)
+                        if dist <= vol.visibility_radius:
+                            volunteer_count += 1
+                            NotificationEngineService.dispatch_notification(
+                                user=vol.user,
+                                title="🚨 Nearby SOS Community Broadcast",
+                                message=f"Urgent: {incident.resident.full_name} needs help nearby. Distance: {dist:.0f}m.",
+                                category="sos",
+                                incident=incident
                             )
+                            if vol.user.email:
+                                NotificationEngineService.send_sos_email(
+                                    email=vol.user.email,
+                                    incident=incident,
+                                    user=vol.user
+                                )
+                except Exception as vol_err:
+                    print(f"[SOSService] Volunteer notification warning: {vol_err}", flush=True)
+
+            from emergency.models import ResidentGuardian, EmergencyContact
+            guardian_count = ResidentGuardian.objects.filter(resident=user, status='Active').count()
+            contacts_count = EmergencyContact.objects.filter(resident=user).count()
+            User_Model = get_user_model()
+            security_count = User_Model.objects.filter(role='SECURITY', is_active=True).count()
+
+            incident.notifications_summary = {
+                "guardian_notified": guardian_count > 0,
+                "guardian_count": guardian_count,
+                "security_notified": security_count > 0,
+                "security_count": security_count,
+                "volunteer_notified": volunteer_count > 0,
+                "volunteer_count": volunteer_count,
+                "emergency_contacts_notified": contacts_count > 0,
+                "contacts_count": contacts_count,
+            }
 
         return incident
 
@@ -540,6 +631,114 @@ class SOSService:
         return updated
 
     @staticmethod
+    def accept_and_assign_incident(incident_id: int, responder, ip_address: str = None) -> SOSIncident:
+        """
+        Formally accept an SOS incident by a Volunteer or Security responder.
+        Uses select_for_update() to prevent race conditions & duplicate assignments.
+        """
+        with transaction.atomic():
+            try:
+                incident = SOSIncident.objects.select_for_update().select_related("resident", "category").get(pk=incident_id)
+            except SOSIncident.DoesNotExist:
+                raise SOSIncident.DoesNotExist("SOS incident not found.")
+
+            if incident.assigned_responder is not None or incident.assignment_status in ["Assigned", "In Progress", "Resolved"] or incident.status in ["Assigned", "In Progress", "Resolved"]:
+                raise AlreadyAssignedException("Incident already assigned.")
+
+            from emergency.models import ResidentGuardian
+            is_guardian = ResidentGuardian.objects.filter(guardian=responder, resident=incident.resident, status='Active').exists()
+            role_display = "Guardian" if is_guardian else ("Volunteer" if responder.role == "VOLUNTEER" else ("Security" if responder.role == "SECURITY" else responder.role.title()))
+            prev_status = incident.status
+            now = timezone.now()
+
+            incident.assigned_responder = responder
+            incident.assigned_role = role_display
+            incident.accepted_at = now
+            incident.assignment_status = "Assigned"
+            incident.status = "Accepted"
+            incident.save()
+
+            # Audit log entry
+            AssignmentLog.objects.create(
+                incident=incident,
+                responder=responder,
+                role=role_display,
+                accepted_at=now,
+                previous_status=prev_status,
+                new_status="Assigned",
+                ip_address=ip_address,
+            )
+
+            # Cancel remaining auto-escalation logs
+            EscalationLog.objects.filter(incident=incident, status='PENDING').update(
+                status='CANCELLED',
+                response_status=f'Cancelled due to assignment to {responder.full_name}'
+            )
+
+            # 1. Notify Resident
+            NotificationEngineService.dispatch_notification(
+                user=incident.resident,
+                title="🚨 SOS Incident Accepted",
+                message=f"{role_display} {responder.full_name or responder.email} has accepted your SOS.",
+                category="sos",
+                incident=incident,
+                priority="HIGH",
+                channels=['IN_APP', 'FCM', 'SMS']
+            )
+
+            # 2. Notify Primary Guardian(s)
+            SOSService._notify_guardians_of_assignment(incident, responder, role_display)
+
+            # 3. Notify Admins
+            User = get_user_model()
+            admins = User.objects.filter(role="ADMIN")
+            for admin_user in admins:
+                NotificationEngineService.dispatch_notification(
+                    user=admin_user,
+                    title="🚨 SOS Incident Assigned",
+                    message=f"{role_display} {responder.full_name} has accepted incident #{incident.id} for {incident.resident.full_name}.",
+                    category="sos",
+                    incident=incident,
+                    priority="HIGH",
+                    channels=['IN_APP', 'FCM']
+                )
+
+        return incident
+
+    @staticmethod
+    def _notify_guardians_of_assignment(incident: SOSIncident, responder, role_display: str):
+        resident = incident.resident
+        User = get_user_model()
+
+        contact_phones = list(EmergencyContact.objects.filter(resident=resident, is_primary=True).values_list('phone', flat=True))
+        guardian_phones = list(Guardian.objects.filter(resident=resident, is_primary=True).values_list('phone', flat=True))
+        all_primary_phones = set(contact_phones + guardian_phones)
+
+        primary_user_ids = set(User.objects.filter(
+            linked_residents__resident=resident,
+            linked_residents__is_primary=True,
+            linked_residents__status='Active'
+        ).exclude(id=resident.id).values_list('id', flat=True))
+
+        if all_primary_phones:
+            matched_ids = User.objects.filter(phone_number__in=all_primary_phones).exclude(id=resident.id).values_list('id', flat=True)
+            primary_user_ids.update(matched_ids)
+
+        primary_guardians = User.objects.filter(id__in=primary_user_ids)
+        msg = f"{role_display} {responder.full_name} has accepted emergency request for {resident.full_name}."
+
+        for g in primary_guardians:
+            NotificationEngineService.dispatch_notification(
+                user=g,
+                title="🚨 SOS Incident Accepted",
+                message=msg,
+                category="sos",
+                incident=incident,
+                priority="HIGH",
+                channels=['IN_APP', 'FCM', 'SMS']
+            )
+
+    @staticmethod
     def reject_incident(incident: SOSIncident, actor=None, reason: str = "") -> SOSIncident:
         """
         Reject an SOS incident, recording rejection and immediately triggering the next escalation step.
@@ -567,8 +766,13 @@ class SOSService:
                 next_step.scheduled_at = now
                 next_step.save(update_fields=['scheduled_at'])
 
-        # Immediately run pending escalations process
-        SOSService.process_pending_escalations()
+        # Trigger pending escalations process via Celery task or direct fallback
+        try:
+            from .tasks import trigger_incident_escalation
+            trigger_incident_escalation.delay(incident.id)
+        except Exception:
+            SOSService.process_pending_escalations()
+
         return incident
 
     @staticmethod
@@ -682,24 +886,691 @@ class SOSService:
             )
         return True
 
-    _daemon_started = False
-
     @classmethod
     def start_escalation_daemon(cls):
-        """Starts a background daemon thread that checks for pending escalations."""
-        if cls._daemon_started:
-            return
-        
-        cls._daemon_started = True
-        
-        def run_loop():
-            print("[ESCALATION DAEMON] Background worker started successfully.")
-            while True:
-                try:
-                    SOSService.process_pending_escalations()
-                except Exception as e:
-                    print(f"[ESCALATION DAEMON] Error in background worker execution: {e}")
-                time.sleep(3)  # poll every 3 seconds
+        """Deprecated: Auto-escalation is handled by Celery workers and Celery Beat scheduler."""
+        print("[CELERY ARCHITECTURE] Auto-escalation active via Celery worker and Celery Beat schedule.")
 
-        thread = threading.Thread(target=run_loop, daemon=True)
-        thread.start()
+
+class IncidentLifecycleService:
+    LIFECYCLE_TRANSITIONS = {
+        "OPEN": ["ACTIVE"],
+        "ACTIVE": ["ESCALATED", "RESOLVED"],
+        "ESCALATED": ["RESOLVED"],
+        "RESOLVED": ["CLOSED"],
+        "CLOSED": [],
+    }
+
+    # Map legacy & current status strings to standardized lifecycle states
+    STATUS_MAP = {
+        "Pending": "OPEN",
+        "Accepted": "ACTIVE",
+        "Assigned": "ACTIVE",
+        "In Progress": "ACTIVE",
+        "Escalated": "ESCALATED",
+        "Resolved": "RESOLVED",
+        "Closed": "CLOSED",
+        "Cancelled": "CLOSED",
+        "OPEN": "OPEN",
+        "ACTIVE": "ACTIVE",
+        "ESCALATED": "ESCALATED",
+        "RESOLVED": "RESOLVED",
+        "CLOSED": "CLOSED",
+    }
+
+    ROLE_TRANSITIONS = {
+        "RESIDENT": [],
+        "VOLUNTEER": [("OPEN", "ACTIVE"), ("ACTIVE", "RESOLVED")],
+        "SECURITY": [("OPEN", "ACTIVE"), ("ACTIVE", "ESCALATED"), ("ESCALATED", "RESOLVED")],
+        "ADMIN": [
+            ("OPEN", "ACTIVE"),
+            ("ACTIVE", "ESCALATED"),
+            ("ACTIVE", "RESOLVED"),
+            ("ESCALATED", "RESOLVED"),
+            ("RESOLVED", "CLOSED"),
+        ],
+        "STAFF": [
+            ("OPEN", "ACTIVE"),
+            ("ACTIVE", "ESCALATED"),
+            ("ACTIVE", "RESOLVED"),
+            ("ESCALATED", "RESOLVED"),
+            ("RESOLVED", "CLOSED"),
+        ],
+    }
+
+    @classmethod
+    def get_allowed_next_states(cls, current_status: str, role: str) -> list:
+        current_state = cls.STATUS_MAP.get(current_status, "OPEN")
+        possible_next = cls.LIFECYCLE_TRANSITIONS.get(current_state, [])
+        role_allowed = cls.ROLE_TRANSITIONS.get(role, [])
+        allowed = []
+        for next_st in possible_next:
+            if (current_state, next_st) in role_allowed:
+                allowed.append(next_st)
+        return allowed
+
+    @classmethod
+    def transition_status(
+        cls,
+        incident_id: int,
+        new_status: str,
+        user,
+        remarks: str = None,
+        ip_address: str = None
+    ) -> SOSIncident:
+        with transaction.atomic():
+            try:
+                incident = SOSIncident.objects.select_for_update().select_related("resident", "category").get(pk=incident_id)
+            except SOSIncident.DoesNotExist:
+                raise ValueError("Incident not found.")
+
+            old_state = cls.STATUS_MAP.get(incident.current_status, cls.STATUS_MAP.get(incident.status, "OPEN"))
+            target_state = cls.STATUS_MAP.get(new_status, new_status.upper())
+
+            if old_state == "CLOSED":
+                raise ValueError("Incident is CLOSED and cannot transition anywhere.")
+
+            if target_state not in cls.LIFECYCLE_TRANSITIONS.get(old_state, []):
+                raise ValueError(f"Invalid transition from '{old_state}' to '{target_state}'. Allowed next states: {cls.LIFECYCLE_TRANSITIONS.get(old_state, [])}")
+
+            role = getattr(user, 'role', 'RESIDENT')
+            allowed_for_role = cls.ROLE_TRANSITIONS.get(role, [])
+            if (old_state, target_state) not in allowed_for_role:
+                raise PermissionError(f"Role '{role}' is not authorized to transition incident from '{old_state}' to '{target_state}'.")
+
+            now = timezone.now()
+            incident.current_status = target_state
+
+            # Sync legacy status field
+            legacy_map = {
+                "OPEN": "Pending",
+                "ACTIVE": "In Progress",
+                "ESCALATED": "Escalated",
+                "RESOLVED": "Resolved",
+                "CLOSED": "Closed",
+            }
+            incident.status = legacy_map.get(target_state, target_state)
+
+            if target_state == "ACTIVE":
+                incident.active_at = now
+            elif target_state == "ESCALATED":
+                incident.escalated_at = now
+            elif target_state == "RESOLVED":
+                incident.resolved_at = now
+                incident.resolved_by = user
+            elif target_state == "CLOSED":
+                incident.closed_at = now
+                incident.closed_by = user
+
+                   # Record audit log
+            IncidentStatusLog.objects.create(
+                incident=incident,
+                old_status=old_state,
+                new_status=target_state,
+                changed_by=user,
+                role=role,
+                remarks=remarks or f"Status transitioned to {target_state}",
+                ip_address=ip_address
+            )
+
+            # Notification triggering
+            cls._notify_lifecycle_change(incident, old_state, target_state, user)
+
+            return incident
+
+
+class IncidentLifecycleService:
+    LIFECYCLE_TRANSITIONS = {
+        "OPEN": ["ACTIVE"],
+        "ACTIVE": ["ESCALATED", "RESOLVED"],
+        "ESCALATED": ["RESOLVED"],
+        "RESOLVED": ["CLOSED"],
+        "CLOSED": [],
+    }
+
+    # Map legacy & current status strings to standardized lifecycle states
+    STATUS_MAP = {
+        "Pending": "OPEN",
+        "Accepted": "ACTIVE",
+        "Assigned": "ACTIVE",
+        "In Progress": "ACTIVE",
+        "Escalated": "ESCALATED",
+        "Resolved": "RESOLVED",
+        "Closed": "CLOSED",
+        "Cancelled": "CLOSED",
+        "OPEN": "OPEN",
+        "ACTIVE": "ACTIVE",
+        "ESCALATED": "ESCALATED",
+        "RESOLVED": "RESOLVED",
+        "CLOSED": "CLOSED",
+    }
+
+    ROLE_TRANSITIONS = {
+        "RESIDENT": [],
+        "VOLUNTEER": [("OPEN", "ACTIVE"), ("ACTIVE", "RESOLVED")],
+        "SECURITY": [("OPEN", "ACTIVE"), ("ACTIVE", "ESCALATED"), ("ACTIVE", "RESOLVED"), ("ESCALATED", "RESOLVED")],
+        "ADMIN": [
+            ("OPEN", "ACTIVE"),
+            ("ACTIVE", "ESCALATED"),
+            ("ACTIVE", "RESOLVED"),
+            ("ESCALATED", "RESOLVED"),
+            ("RESOLVED", "CLOSED"),
+        ],
+        "STAFF": [
+            ("OPEN", "ACTIVE"),
+            ("ACTIVE", "ESCALATED"),
+            ("ACTIVE", "RESOLVED"),
+            ("ESCALATED", "RESOLVED"),
+            ("RESOLVED", "CLOSED"),
+        ],
+    }
+
+    @classmethod
+    def get_allowed_next_states(cls, current_status: str, role: str) -> list:
+        current_state = cls.STATUS_MAP.get(current_status, "OPEN")
+        possible_next = cls.LIFECYCLE_TRANSITIONS.get(current_state, [])
+        role_allowed = cls.ROLE_TRANSITIONS.get(role, [])
+        allowed = []
+        for next_st in possible_next:
+            if (current_state, next_st) in role_allowed:
+                allowed.append(next_st)
+        return allowed
+
+    @classmethod
+    def transition_status(
+        cls,
+        incident_id: int,
+        new_status: str,
+        user,
+        remarks: str = None,
+        ip_address: str = None
+    ) -> SOSIncident:
+        with transaction.atomic():
+            try:
+                incident = SOSIncident.objects.select_for_update().select_related("resident", "category").get(pk=incident_id)
+            except SOSIncident.DoesNotExist:
+                raise ValueError("Incident not found.")
+
+            old_state = cls.STATUS_MAP.get(incident.current_status, cls.STATUS_MAP.get(incident.status, "OPEN"))
+            target_state = cls.STATUS_MAP.get(new_status, new_status.upper())
+
+            if old_state == "CLOSED":
+                raise ValueError("Incident is CLOSED and cannot transition anywhere.")
+
+            if target_state not in cls.LIFECYCLE_TRANSITIONS.get(old_state, []):
+                raise ValueError(f"Invalid transition from '{old_state}' to '{target_state}'. Allowed next states: {cls.LIFECYCLE_TRANSITIONS.get(old_state, [])}")
+
+            role = getattr(user, 'role', 'RESIDENT')
+            allowed_for_role = cls.ROLE_TRANSITIONS.get(role, [])
+            if (old_state, target_state) not in allowed_for_role:
+                raise PermissionError(f"Role '{role}' is not authorized to transition incident from '{old_state}' to '{target_state}'.")
+
+            now = timezone.now()
+            incident.current_status = target_state
+
+            # Sync legacy status field
+            legacy_map = {
+                "OPEN": "Pending",
+                "ACTIVE": "In Progress",
+                "ESCALATED": "Escalated",
+                "RESOLVED": "Resolved",
+                "CLOSED": "Closed",
+            }
+            incident.status = legacy_map.get(target_state, target_state)
+
+            if target_state == "ACTIVE":
+                incident.active_at = now
+            elif target_state == "ESCALATED":
+                incident.escalated_at = now
+            elif target_state == "RESOLVED":
+                incident.resolved_at = now
+                incident.resolved_by = user
+            elif target_state == "CLOSED":
+                incident.closed_at = now
+                incident.closed_by = user
+
+            incident.save()
+
+            # Record audit log
+            IncidentStatusLog.objects.create(
+                incident=incident,
+                old_status=old_state,
+                new_status=target_state,
+                changed_by=user,
+                role=role,
+                remarks=remarks or f"Status transitioned to {target_state}",
+                ip_address=ip_address
+            )
+
+            # Notification triggering
+            cls._notify_lifecycle_change(incident, old_state, target_state, user)
+
+            try:
+                actor_name = getattr(user, 'full_name', 'System')
+                IncidentChatService.create_system_message(
+                    incident,
+                    f"Incident status updated to {target_state} by {actor_name}."
+                )
+            except Exception as chat_err:
+                print(f"[IncidentLifecycleService] System chat message error: {chat_err}")
+
+            return incident
+
+    @classmethod
+    def close_incident(
+        cls,
+        incident_id: int,
+        user,
+        resolution_summary: str,
+        closure_notes: str,
+        closure_reason: str,
+        attachments=None,
+        ip_address: str = None
+    ) -> SOSIncident:
+        with transaction.atomic():
+            try:
+                incident = SOSIncident.objects.select_for_update().select_related("resident", "category").get(pk=incident_id)
+            except SOSIncident.DoesNotExist:
+                raise ValueError("Incident not found.")
+
+            current_state = cls.STATUS_MAP.get(incident.current_status, cls.STATUS_MAP.get(incident.status, "OPEN"))
+
+            if current_state != "RESOLVED":
+                raise ValueError(f"Only incidents in 'RESOLVED' state can be closed. Current state is '{current_state}'.")
+
+            role = getattr(user, 'role', 'RESIDENT')
+            if role not in ["ADMIN", "STAFF", "VOLUNTEER", "SECURITY"]:
+                raise PermissionError(f"Role '{role}' is not authorized to close incidents.")
+
+            now = timezone.now()
+            incident.current_status = "CLOSED"
+            incident.status = "Closed"
+            incident.closed_at = now
+            incident.closed_by = user
+            incident.resolution_summary = resolution_summary
+            incident.closure_notes = closure_notes
+            incident.closure_reason = closure_reason
+
+            incident.save()
+
+            IncidentStatusLog.objects.create(
+                incident=incident,
+                old_status="RESOLVED",
+                new_status="CLOSED",
+                changed_by=user,
+                role=role,
+                remarks=f"Closure: {closure_reason}. {closure_notes or ''}".strip(),
+                ip_address=ip_address
+            )
+
+            cls._notify_lifecycle_change(incident, "RESOLVED", "CLOSED", user)
+
+            try:
+                actor_name = getattr(user, 'full_name', 'System')
+                IncidentChatService.create_system_message(
+                    incident,
+                    f"Incident closed by {actor_name}. Reason: {closure_reason}."
+                )
+            except Exception as chat_err:
+                print(f"[IncidentLifecycleService] System chat message error: {chat_err}")
+
+            return incident
+
+    @classmethod
+    def get_incident_timeline(cls, incident_id: int) -> list:
+        try:
+            incident = SOSIncident.objects.select_related("resident", "assigned_responder").get(pk=incident_id)
+        except SOSIncident.DoesNotExist:
+            return []
+
+        timeline = []
+
+        # 1. Open Event
+        open_time = incident.opened_at or incident.created_at
+        timeline.append({
+            "status": "OPEN",
+            "time": open_time.isoformat() if open_time else None,
+            "user": incident.resident.id if incident.resident else None,
+            "user_name": incident.resident.full_name if incident.resident else "Resident",
+            "role": "RESIDENT",
+            "remarks": f"Emergency SOS triggered: {incident.message or 'Immediate assistance required.'}"
+        })
+
+        # 2. Acceptance Event if exists
+        if incident.accepted_at and incident.assigned_responder:
+            timeline.append({
+                "status": "ACCEPTED",
+                "time": incident.accepted_at.isoformat(),
+                "user": incident.assigned_responder.id,
+                "user_name": incident.assigned_responder.full_name,
+                "role": incident.assigned_role or "RESPONDER",
+                "remarks": f"Emergency accepted by {incident.assigned_role or 'Responder'} {incident.assigned_responder.full_name}"
+            })
+
+        # 3. Status Change Logs
+        logs = IncidentStatusLog.objects.filter(incident_id=incident_id).select_related("changed_by").order_by("timestamp")
+        for l in logs:
+            user_name = l.changed_by.full_name if l.changed_by else "System"
+            timeline.append({
+                "status": l.new_status,
+                "time": l.timestamp.isoformat(),
+                "user": l.changed_by.id if l.changed_by else None,
+                "user_name": user_name,
+                "role": l.role or "SYSTEM",
+                "remarks": l.remarks or f"Transitioned from {l.old_status} to {l.new_status}"
+            })
+
+        return timeline
+
+    @classmethod
+    def _notify_lifecycle_change(cls, incident: SOSIncident, old_status: str, new_status: str, actor):
+        resident = incident.resident
+        User = get_user_model()
+
+        recipients = [resident]
+
+        if incident.assigned_responder:
+            recipients.append(incident.assigned_responder)
+
+        admins_and_security = User.objects.filter(role__in=["ADMIN", "SECURITY"])
+        recipients.extend(list(admins_and_security))
+
+        unique_recipients = {r.id: r for r in recipients if r and r.id != getattr(actor, 'id', None)}.values()
+
+        actor_name = getattr(actor, 'full_name', 'System')
+        msg = f"SOS Incident #{incident.id} updated from {old_status} to {new_status} by {actor_name}."
+
+        for user in unique_recipients:
+            try:
+                NotificationEngineService.dispatch_notification(
+                    user=user,
+                    title=f"SOS Lifecycle Update: {new_status}",
+                    message=msg,
+                    category="sos",
+                    incident=incident
+                )
+            except Exception as ex:
+                print(f"[IncidentLifecycleService] Error dispatching notification to {user}: {ex}")
+
+        # Send SMS to Primary Guardians
+        try:
+            from emergency.models import Guardian
+            guardians = Guardian.objects.filter(resident=resident, is_primary=True)
+            for g in guardians:
+                if g.phone:
+                    try:
+                        NotificationEngineService.send_sms(
+                            phone=g.phone,
+                            message=f"SOS Alert Update: Incident #{incident.id} is now {new_status}."
+                        )
+                    except Exception as sms_err:
+                        print(f"[IncidentLifecycleService] Guardian SMS error: {sms_err}")
+        except Exception as e:
+            print(f"[IncidentLifecycleService] Guardian notification exception: {e}")
+
+
+class IncidentChatService:
+    @classmethod
+    def is_participant(cls, incident: SOSIncident, user) -> bool:
+        if not user or not user.is_authenticated:
+            return False
+
+        role = getattr(user, 'role', 'RESIDENT')
+        if role in ['ADMIN', 'STAFF'] or getattr(user, 'is_staff', False):
+            return True
+
+        if incident.resident_id == user.id:
+            return True
+
+        if incident.assigned_responder_id == user.id:
+            return True
+
+        if AssignmentLog.objects.filter(incident=incident, responder=user).exists():
+            return True
+
+        from emergency.models import Guardian
+        if Guardian.objects.filter(resident=incident.resident, phone=getattr(user, 'phone_number', '')).exists():
+            return True
+
+        return False
+
+    @classmethod
+    def create_system_message(cls, incident: SOSIncident, text: str) -> IncidentChatMessage:
+        msg = IncidentChatMessage.objects.create(
+            incident=incident,
+            sender=None,
+            sender_role='SYSTEM',
+            message_type='SYSTEM',
+            message=text
+        )
+        cls.broadcast_message(msg)
+        return msg
+
+    @classmethod
+    def create_chat_message(
+        cls,
+        incident: SOSIncident,
+        sender,
+        message: str = "",
+        message_type: str = "TEXT",
+        attachment=None,
+        latitude=None,
+        longitude=None,
+        reply_to=None
+    ) -> IncidentChatMessage:
+        current_st = incident.current_status or incident.status
+        if current_st in ["CLOSED", "Closed"]:
+            raise ValueError("Incident is closed. Chat is read-only.")
+
+        if not cls.is_participant(incident, sender):
+            raise PermissionError("Only authorized incident participants may send messages.")
+
+        role = getattr(sender, 'role', 'RESIDENT')
+        if incident.resident_id == sender.id:
+            sender_role = 'RESIDENT'
+        elif incident.assigned_responder_id == sender.id:
+            sender_role = role
+        elif role in ['ADMIN', 'STAFF']:
+            sender_role = 'ADMIN'
+        else:
+            from emergency.models import Guardian
+            if Guardian.objects.filter(resident=incident.resident, phone=getattr(sender, 'phone_number', '')).exists():
+                sender_role = 'GUARDIAN'
+            else:
+                sender_role = role
+
+        msg = IncidentChatMessage.objects.create(
+            incident=incident,
+            sender=sender,
+            sender_role=sender_role,
+            message=message or "",
+            message_type=message_type,
+            attachment=attachment,
+            latitude=latitude,
+            longitude=longitude,
+            reply_to=reply_to
+        )
+
+        cls.broadcast_message(msg)
+        cls.notify_new_message(msg)
+        return msg
+
+    @classmethod
+    def broadcast_message(cls, chat_msg: IncidentChatMessage):
+        try:
+            from channels.layers import get_channel_layer
+            from asgiref.sync import async_to_sync
+
+            channel_layer = get_channel_layer()
+            if not channel_layer:
+                return
+
+            attachment_url = None
+            if chat_msg.attachment:
+                try:
+                    attachment_url = chat_msg.attachment.url
+                except Exception:
+                    attachment_url = str(chat_msg.attachment)
+
+            payload = {
+                "type": "chat_message_broadcast",
+                "message": {
+                    "id": chat_msg.id,
+                    "incident_id": chat_msg.incident_id,
+                    "sender_id": chat_msg.sender_id,
+                    "sender_name": chat_msg.sender.full_name if chat_msg.sender else "SYSTEM",
+                    "sender_role": chat_msg.sender_role,
+                    "message": chat_msg.message,
+                    "message_type": chat_msg.message_type,
+                    "attachment": attachment_url,
+                    "latitude": float(chat_msg.latitude) if chat_msg.latitude else None,
+                    "longitude": float(chat_msg.longitude) if chat_msg.longitude else None,
+                    "is_read": chat_msg.is_read,
+                    "reply_to_id": chat_msg.reply_to_id,
+                    "created_at": chat_msg.created_at.isoformat(),
+                }
+            }
+
+            async_to_sync(channel_layer.group_send)(
+                f"incident_chat_{chat_msg.incident_id}",
+                payload
+            )
+        except Exception as e:
+            print(f"[IncidentChatService] Broadcast exception: {e}")
+
+    @classmethod
+    def notify_new_message(cls, chat_msg: IncidentChatMessage):
+        if chat_msg.message_type == 'SYSTEM' or not chat_msg.sender:
+            return
+
+        incident = chat_msg.incident
+        sender = chat_msg.sender
+        sender_name = sender.full_name or sender.email
+
+        recipients = []
+
+        if incident.resident and incident.resident_id != sender.id:
+            recipients.append(incident.resident)
+
+        if incident.assigned_responder and incident.assigned_responder_id != sender.id:
+            recipients.append(incident.assigned_responder)
+
+        for r in set(recipients):
+            try:
+                NotificationEngineService.dispatch_notification(
+                    user=r,
+                    title=f"New Chat Message from {sender_name}",
+                    message=chat_msg.message[:100] if chat_msg.message else f"Sent a {chat_msg.message_type} message.",
+                    category="sos_chat",
+                    incident=incident
+                )
+            except Exception as e:
+                print(f"[IncidentChatService] Notification error: {e}")
+
+
+class IncidentResponseUpdateService:
+    @classmethod
+    def create_system_update(cls, incident: SOSIncident, update_type: str, message: str) -> IncidentResponseUpdate:
+        update = IncidentResponseUpdate.objects.create(
+            incident=incident,
+            author=None,
+            role='SYSTEM',
+            update_type=update_type,
+            message=message,
+            visibility='PUBLIC'
+        )
+        cls.broadcast_response_update(update)
+        return update
+
+    @classmethod
+    def create_response_update(
+        cls,
+        incident: SOSIncident,
+        author,
+        update_type: str = 'TEXT',
+        message: str = '',
+        visibility: str = 'PUBLIC',
+        attachment=None,
+        latitude=None,
+        longitude=None
+    ) -> IncidentResponseUpdate:
+        current_st = incident.current_status or incident.status
+        if current_st in ['CLOSED', 'Closed']:
+            raise ValueError("Incident is closed. Updates are read-only.")
+
+        if not IncidentChatService.is_participant(incident, author):
+            raise PermissionError("Only incident participants can post response updates.")
+
+        role = getattr(author, 'role', 'RESIDENT')
+        if incident.resident_id == author.id:
+            author_role = 'RESIDENT'
+        elif incident.assigned_responder_id == author.id:
+            author_role = role
+        elif role in ['ADMIN', 'STAFF']:
+            author_role = 'ADMIN'
+        else:
+            author_role = role
+
+        update = IncidentResponseUpdate.objects.create(
+            incident=incident,
+            author=author,
+            role=author_role,
+            update_type=update_type,
+            message=message,
+            visibility=visibility,
+            attachment=attachment,
+            latitude=latitude,
+            longitude=longitude
+        )
+
+        cls.notify_response_update(update)
+        cls.broadcast_response_update(update)
+        return update
+
+    @classmethod
+    def broadcast_response_update(cls, update: IncidentResponseUpdate):
+        try:
+            from channels.layers import get_channel_layer
+            from asgiref.sync import async_to_sync
+            from .serializers import IncidentResponseUpdateSerializer
+
+            channel_layer = get_channel_layer()
+            if channel_layer:
+                serializer = IncidentResponseUpdateSerializer(update)
+                async_to_sync(channel_layer.group_send)(
+                    f"incident_chat_{update.incident_id}",
+                    {
+                        "type": "response_update_broadcast",
+                        "update": serializer.data
+                    }
+                )
+        except Exception as e:
+            print(f"[IncidentResponseUpdateService] WebSocket broadcast error: {e}")
+
+    @classmethod
+    def notify_response_update(cls, update: IncidentResponseUpdate):
+        if update.update_type == 'SYSTEM' or not update.author:
+            return
+
+        incident = update.incident
+        author_name = update.author.full_name or update.author.email
+
+        recipients = []
+        if incident.resident and incident.resident_id != update.author_id:
+            recipients.append(incident.resident)
+        if incident.assigned_responder and incident.assigned_responder_id != update.author_id:
+            recipients.append(incident.assigned_responder)
+
+        for r in set(recipients):
+            try:
+                NotificationEngineService.dispatch_notification(
+                    user=r,
+                    title=f"Incident Update from {author_name}",
+                    message=update.message[:100] if update.message else f"New {update.update_type} response update posted.",
+                    category="sos",
+                    incident=incident
+                )
+            except Exception as e:
+                print(f"[IncidentResponseUpdateService] Notification error: {e}")
+
+

@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:dio/dio.dart';
 
 import '../constants/app_constants.dart';
@@ -21,9 +22,34 @@ class ApiClient {
           if (token != null && token.isNotEmpty) {
             options.headers['Authorization'] = 'Bearer $token';
           }
+          if (kDebugMode) {
+            debugPrint('=== DIO REQUEST ===');
+            debugPrint('URL: ${options.baseUrl}${options.path}');
+            debugPrint('Method: ${options.method}');
+            debugPrint('Headers: ${options.headers}');
+            if (options.data != null) debugPrint('Request JSON: ${options.data}');
+          }
           handler.next(options);
         },
+        onResponse: (response, handler) {
+          if (kDebugMode) {
+            debugPrint('=== DIO RESPONSE ===');
+            debugPrint('URL: ${response.requestOptions.path}');
+            debugPrint('Status Code: ${response.statusCode}');
+            debugPrint('Response JSON: ${response.data}');
+          }
+          handler.next(response);
+        },
         onError: (error, handler) async {
+          if (kDebugMode) {
+            debugPrint('=== DIO ERROR ===');
+            debugPrint('URL: ${error.requestOptions.path}');
+            debugPrint('Status Code: ${error.response?.statusCode}');
+            debugPrint('Response Data: ${error.response?.data}');
+            debugPrint('Error Message: ${error.message}');
+            if (error.stackTrace != null) debugPrint('Stack Trace: ${error.stackTrace}');
+          }
+
           final isAuthEndpoint = error.requestOptions.path.contains('/login') ||
               error.requestOptions.path.contains('/token/refresh');
           final shouldRefresh = error.response?.statusCode == 401 && !_isRefreshing && !isAuthEndpoint;
@@ -58,6 +84,7 @@ class ApiClient {
       ),
     );
   }
+
 
   static final ApiClient instance = ApiClient._();
 
@@ -145,4 +172,51 @@ class ApiClient {
   }) {
     return _dio.patch(path, data: data, queryParameters: queryParameters, options: options);
   }
+
+  // ── Static Helper Wrappers ─────────────────────────────────────────────
+  static String get baseUrl => AppConstants.defaultBaseUrl;
+
+  static Future<String?> getAccessToken() async {
+    return LocalStorageService.instance.getString(AppConstants.apiTokenKey);
+  }
+
+  static String extractErrorMessage(dynamic error) {
+    if (error is DioException) {
+      if (error.response?.statusCode == 401) {
+        return 'Unauthorized. Please login again.';
+      }
+      if (error.response?.data != null) {
+        final data = error.response!.data;
+        if (data is Map) {
+          if (data['message'] != null && data['message'].toString().isNotEmpty) {
+            return data['message'].toString();
+          }
+          if (data['detail'] != null && data['detail'].toString().isNotEmpty) {
+            return data['detail'].toString();
+          }
+          if (data['error'] != null && data['error'].toString().isNotEmpty) {
+            return data['error'].toString();
+          }
+          for (final entry in data.entries) {
+            if (entry.value is List && (entry.value as List).isNotEmpty) {
+              return '${entry.key}: ${(entry.value as List).first}';
+            } else if (entry.value is String) {
+              return '${entry.key}: ${entry.value}';
+            }
+          }
+        } else if (data is String && data.isNotEmpty) {
+          return data;
+        }
+      }
+      if (error.type == DioExceptionType.connectionTimeout || error.type == DioExceptionType.receiveTimeout) {
+        return 'Network connection timeout. Please try again.';
+      }
+      if (error.type == DioExceptionType.connectionError) {
+        return 'Network connection failure. Please check your internet connection.';
+      }
+    }
+    final raw = error.toString().replaceAll('Exception: ', '').replaceAll('DioException: ', '');
+    return raw.isNotEmpty ? raw : 'An unexpected error occurred. Please try again.';
+  }
 }
+

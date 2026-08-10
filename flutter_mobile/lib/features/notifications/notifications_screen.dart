@@ -315,8 +315,8 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                                   ],
                                 ),
                               ),
-                              onDismissed: (_) async {
-                                await provider.deleteNotification(notif.id);
+                              onDismissed: (_) {
+                                provider.deleteNotification(notif.id);
                                 if (context.mounted) {
                                   ScaffoldMessenger.of(context).showSnackBar(
                                     const SnackBar(content: Text('Notification deleted')),

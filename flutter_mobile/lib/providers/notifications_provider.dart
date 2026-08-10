@@ -1,10 +1,8 @@
 import 'dart:async';
-import 'dart:convert';
 import 'package:flutter/material.dart';
 
 import '../models/notification_model.dart';
 import '../services/notification_repository.dart';
-import '../core/services/local_storage_service.dart';
 
 class NotificationsProvider extends ChangeNotifier {
   NotificationsProvider({NotificationRepository? repository})
@@ -23,7 +21,7 @@ class NotificationsProvider extends ChangeNotifier {
   String _selectedSort = 'Newest';
 
   List<AppNotificationModel> _notifications = [];
-  List<AppNotificationModel> _guardianNotifications = [];
+  final List<AppNotificationModel> _guardianNotifications = [];
 
   Timer? _pollingTimer;
   final Set<String> _knownNotificationIds = {};
@@ -266,18 +264,26 @@ class NotificationsProvider extends ChangeNotifier {
   }
 
   Future<void> deleteNotification(String id) async {
-    await _repository.deleteNotification(id);
     _notifications = _notifications.where((n) => n.id != id).toList();
     fetchUnreadCount();
     notifyListeners();
+    try {
+      await _repository.deleteNotification(id);
+    } catch (e) {
+      debugPrint('Error deleting notification on server: $e');
+    }
   }
 
   Future<void> deleteMultiple(List<String> ids) async {
     if (ids.isEmpty) return;
-    await _repository.deleteMultiple(ids);
     _notifications = _notifications.where((n) => !ids.contains(n.id)).toList();
     fetchUnreadCount();
     notifyListeners();
+    try {
+      await _repository.deleteMultiple(ids);
+    } catch (e) {
+      debugPrint('Error deleting multiple notifications on server: $e');
+    }
   }
 
   Future<void> registerDeviceToken(String token) async {

@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 
 import 'core/theme/app_theme.dart';
+import 'core/localization/app_localizations.dart';
 import 'providers/auth_provider.dart';
 import 'routes/app_router.dart';
 
@@ -12,6 +14,7 @@ class CareConnectApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final authProvider = context.watch<AuthProvider>();
+    final currentLocale = Locale(authProvider.languageCode);
 
     return MaterialApp.router(
       title: 'CareConnect',
@@ -19,12 +22,24 @@ class CareConnectApp extends StatelessWidget {
       theme: AppTheme.lightTheme(false),
       darkTheme: AppTheme.lightTheme(true),
       themeMode: authProvider.themeMode,
+      locale: currentLocale,
+      supportedLocales: AppLocalizations.supportedLocales,
+      localizationsDelegates: const [
+        AppLocalizations.delegate,
+        GlobalMaterialLocalizations.delegate,
+        GlobalWidgetsLocalizations.delegate,
+        GlobalCupertinoLocalizations.delegate,
+      ],
       routerConfig: AppRouter.router(authProvider),
       builder: (context, child) {
         final base = child ?? const SizedBox.shrink();
-        return DefaultTextStyle.merge(
-          style: GoogleFonts.interTextTheme(Theme.of(context).textTheme).bodyMedium ?? const TextStyle(),
-          child: base,
+        final isArabic = authProvider.languageCode == 'ar';
+        return Directionality(
+          textDirection: isArabic ? TextDirection.rtl : TextDirection.ltr,
+          child: DefaultTextStyle.merge(
+            style: GoogleFonts.interTextTheme(Theme.of(context).textTheme).bodyMedium ?? const TextStyle(),
+            child: base,
+          ),
         );
       },
     );

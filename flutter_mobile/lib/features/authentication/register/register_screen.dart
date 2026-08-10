@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import '../../../core/theme/app_theme.dart';
+import '../../../core/localization/app_localizations.dart';
 import '../../../core/utils/validators.dart';
 import '../../../providers/auth_provider.dart';
 import '../../../services/society_repository.dart';
@@ -306,10 +307,10 @@ class _RegisterScreenState extends State<RegisterScreen> {
             Center(
               child: Text(
                 _currentStep == 0
-                    ? 'Step 1: Enter your personal details'
+                    ? AppLocalizations.of(context).translate('step1PersonalDetails')
                     : _currentStep == 1
-                        ? 'Step 2: Choose and configure your profile role'
-                        : 'Step 3: Confirm details and register',
+                        ? AppLocalizations.of(context).translate('step2RoleConfig')
+                        : AppLocalizations.of(context).translate('step3ConfirmDetails'),
                 style: GoogleFonts.inter(
                   fontSize: 14,
                   color: isDark ? Colors.white60 : const Color(0xFF64748B),
@@ -413,74 +414,75 @@ class _RegisterScreenState extends State<RegisterScreen> {
 
   // Step 0: Personal Details
   Widget _buildStep0() {
-    return Form(
-      key: _formKey0,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          const SizedBox(height: 8),
-          _formField(
-            controller: _nameController,
-            hint: 'Full Name',
-            icon: Icons.person_outline_rounded,
-            validator: (v) => Validators.requiredField(v, label: 'Full name'),
-          ),
-          const SizedBox(height: 16),
-          _formField(
-            controller: _emailController,
-            hint: 'Email Address',
-            icon: Icons.mail_outline_rounded,
-            validator: Validators.email,
-            keyboardType: TextInputType.emailAddress,
-          ),
-          const SizedBox(height: 16),
-          _formField(
-            controller: _phoneController,
-            hint: 'Phone Number',
-            icon: Icons.phone_outlined,
-            validator: (v) => Validators.requiredField(v, label: 'Phone number'),
-            keyboardType: TextInputType.phone,
-          ),
-          const SizedBox(height: 16),
-          _formField(
-            controller: _passwordController,
-            hint: 'Password (min 8 chars)',
-            icon: Icons.lock_outline_rounded,
-            obscureText: _obscurePassword,
-            validator: Validators.password,
-            suffixIcon: IconButton(
-              onPressed: () => setState(() => _obscurePassword = !_obscurePassword),
-              icon: Icon(
-                _obscurePassword ? Icons.visibility_rounded : Icons.visibility_off_rounded,
-                color: const Color(0xFF94A3B8),
-              ),
+          final loc = AppLocalizations.of(context);
+          return Form(
+            key: _formKey0,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                const SizedBox(height: 8),
+                _formField(
+                  controller: _nameController,
+                  hint: loc.translate('fullName'),
+                  icon: Icons.person_outline_rounded,
+                  validator: (v) => Validators.requiredField(v, label: loc.translate('fullName')),
+                ),
+                const SizedBox(height: 16),
+                _formField(
+                  controller: _emailController,
+                  hint: loc.translate('email'),
+                  icon: Icons.mail_outline_rounded,
+                  validator: Validators.email,
+                  keyboardType: TextInputType.emailAddress,
+                ),
+                const SizedBox(height: 16),
+                _formField(
+                  controller: _phoneController,
+                  hint: loc.translate('emergencyContact'),
+                  icon: Icons.phone_outlined,
+                  validator: (v) => Validators.requiredField(v, label: loc.translate('emergencyContact')),
+                  keyboardType: TextInputType.phone,
+                ),
+                const SizedBox(height: 16),
+                _formField(
+                  controller: _passwordController,
+                  hint: loc.translate('password'),
+                  icon: Icons.lock_outline_rounded,
+                  obscureText: _obscurePassword,
+                  validator: Validators.password,
+                  suffixIcon: IconButton(
+                    onPressed: () => setState(() => _obscurePassword = !_obscurePassword),
+                    icon: Icon(
+                      _obscurePassword ? Icons.visibility_rounded : Icons.visibility_off_rounded,
+                      color: const Color(0xFF94A3B8),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                _formField(
+                  controller: _confirmPasswordController,
+                  hint: loc.translate('confirmPassword'),
+                  icon: Icons.lock_outline_rounded,
+                  obscureText: _obscureConfirmPassword,
+                  validator: (v) {
+                    if (v != _passwordController.text) {
+                      return loc.translate('passwordsDoNotMatch');
+                    }
+                    return Validators.requiredField(v, label: loc.translate('confirmPassword'));
+                  },
+                  suffixIcon: IconButton(
+                    onPressed: () => setState(() => _obscureConfirmPassword = !_obscureConfirmPassword),
+                    icon: Icon(
+                      _obscureConfirmPassword ? Icons.visibility_rounded : Icons.visibility_off_rounded,
+                      color: const Color(0xFF94A3B8),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 32),
+                _actionButton(label: loc.translate('continueText'), onPressed: _nextStep),
+              ],
             ),
-          ),
-          const SizedBox(height: 16),
-          _formField(
-            controller: _confirmPasswordController,
-            hint: 'Confirm Password',
-            icon: Icons.lock_outline_rounded,
-            obscureText: _obscureConfirmPassword,
-            validator: (v) {
-              if (v != _passwordController.text) {
-                return 'Passwords do not match';
-              }
-              return Validators.requiredField(v, label: 'Confirm password');
-            },
-            suffixIcon: IconButton(
-              onPressed: () => setState(() => _obscureConfirmPassword = !_obscureConfirmPassword),
-              icon: Icon(
-                _obscureConfirmPassword ? Icons.visibility_rounded : Icons.visibility_off_rounded,
-                color: const Color(0xFF94A3B8),
-              ),
-            ),
-          ),
-          const SizedBox(height: 32),
-          _actionButton(label: 'Continue', onPressed: _nextStep),
-        ],
-      ),
-    );
+          );
   }
 
   // Step 1: Role Config Details
@@ -550,13 +552,15 @@ class _RegisterScreenState extends State<RegisterScreen> {
             // Society Selection
             _dropdownField<int>(
               value: _selectedSocietyId,
-              hint: 'Select Society',
+              hint: _isLoadingSocieties ? 'Loading Societies...' : (_societies.isEmpty ? 'No Societies Found (Tap to retry)' : 'Select Society'),
               icon: Icons.apartment_rounded,
               items: _societies.map((s) => DropdownMenuItem(value: s.id, child: Text(s.name))).toList(),
               onChanged: (val) {
                 if (val != null) {
                   setState(() => _selectedSocietyId = val);
                   _loadBlocks(val);
+                } else if (_societies.isEmpty) {
+                  _loadSocieties();
                 }
               },
               validator: (v) => v == null ? 'Society is required' : null,

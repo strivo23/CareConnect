@@ -5,7 +5,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../core/theme/app_theme.dart';
 import '../../core/services/api_client.dart';
-import '../../providers/auth_provider.dart';
+import '../../core/localization/app_localizations.dart';
 import '../../providers/notifications_provider.dart';
 import '../../services/location_service.dart';
 import '../../models/notification_model.dart';
@@ -96,6 +96,13 @@ class _VolunteerDashboardScreenState extends State<VolunteerDashboardScreen> {
       }
 
       final res = await ApiClient.instance.patch('/api/accounts/me/', data: data);
+      await ApiClient.instance.patch('/api/accounts/volunteer/availability/', data: {
+        'is_online': value,
+        'availability_status': value ? 'ONLINE' : 'OFFLINE',
+        if (data.containsKey('latitude')) 'latitude': data['latitude'],
+        if (data.containsKey('longitude')) 'longitude': data['longitude'],
+      });
+
       if (res.statusCode == 200) {
         setState(() {
           _isOnline = value;
@@ -127,9 +134,72 @@ class _VolunteerDashboardScreenState extends State<VolunteerDashboardScreen> {
     }
   }
 
+  int? _acceptingIncidentId;
+
+  Future<void> _acceptIncident(Map<String, dynamic> item) async {
+    final incidentId = item['id'];
+    if (incidentId == null) return;
+
+    setState(() {
+      _acceptingIncidentId = incidentId;
+    });
+
+    try {
+      final res = await ApiClient.instance.post('/api/sos/incidents/$incidentId/accept/');
+
+      if (res.statusCode == 200 && res.data != null && res.data['success'] == true) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('SOS Incident accepted successfully!'),
+              backgroundColor: AppTheme.success,
+              behavior: SnackBarBehavior.floating,
+            ),
+          );
+          final incidentObj = res.data['incident'] is Map<String, dynamic>
+              ? Map<String, dynamic>.from(res.data['incident'])
+              : Map<String, dynamic>.from(item);
+
+          context.push('/assigned-incident', extra: incidentObj);
+        }
+        await _fetchNearbyIncidents();
+      } else {
+        final msg = res.data?['message'] ?? res.data?['detail'] ?? 'Failed to accept incident.';
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(msg.toString()),
+              backgroundColor: AppTheme.danger,
+              behavior: SnackBarBehavior.floating,
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      String msg = 'Failed to accept incident.';
+      if (e.toString().contains('409') || e.toString().contains('already assigned')) {
+        msg = 'This incident has already been assigned.';
+      }
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(msg),
+            backgroundColor: AppTheme.danger,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _acceptingIncidentId = null;
+        });
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
-    final user = context.watch<AuthProvider>().user;
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
     return Scaffold(
@@ -268,65 +338,137 @@ class _VolunteerDashboardScreenState extends State<VolunteerDashboardScreen> {
                   itemCount: _nearbyIncidents.length,
                   itemBuilder: (context, index) {
                     final item = _nearbyIncidents[index];
+                    final isAccepting = _acceptingIncidentId == item['id'];
+                    final isAssigned = item['status'] == 'Assigned' || item['status'] == 'Accepted';
+                    final assignedResponder = item['assigned_responder_name'];
+
                     return Card(
                       margin: const EdgeInsets.only(bottom: 12),
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
                       color: Theme.of(context).colorScheme.surface,
                       elevation: 0,
-                      child: ListTile(
-                        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                        leading: CircleAvatar(
-                          backgroundColor: Colors.red.shade50,
-                          child: const Icon(Icons.emergency_rounded, color: Colors.red),
-                        ),
-                        title: Text(
-                          item['category_name']?.toString() ?? 'Emergency Alert',
-                          style: GoogleFonts.outfit(fontWeight: FontWeight.bold),
-                        ),
-                        subtitle: Column(
+                      child: Padding(
+                        padding: const EdgeInsets.all(16),
+                        child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            const SizedBox(height: 4),
-                            Text('Resident: ${item['resident_name'] ?? 'Unknown'}'),
-                            const SizedBox(height: 2),
-                            Text('Message: ${item['message'] ?? 'Immediate assistance requested'}'),
-                          ],
-                        ),
-                        trailing: ElevatedButton(
-                          onPressed: () {
-                            // Launch detail screen
-                            // Wrap dynamic map into app notification model
-                            // to support standard SOSDetailScreen structure
-                            final fakeNotif = {
-                              'id': 'inc_${item['id']}',
-                              'title': 'Emergency SOS',
-                              'message': '${item['resident_name']} needs help.',
-                              'category': 'sos',
-                              'is_read': false,
-                              'created_at': item['created_at'],
-                              'priority': item['priority'] ?? 'HIGH',
-                              'location': item['address'] ?? '',
-                              'incident': item['id'],
-                              'resident_name': item['resident_name'] ?? '',
-                              'emergency_category': item['category_name'] ?? '',
-                              'incident_message': item['message'] ?? '',
-                              'incident_status': item['status'] ?? 'Pending',
-                            };
-                            final notificationModel = context.read<NotificationsProvider>().notifications.firstWhere(
-                                  (notif) => notif.incidentId == item['id'],
-                                  orElse: () => context.read<NotificationsProvider>().guardianNotifications.firstWhere(
-                                        (notif) => notif.incidentId == item['id'],
-                                        orElse: () => AppNotificationModel.fromJson(fakeNotif),
+                            Row(
+                              children: [
+                                CircleAvatar(
+                                  backgroundColor: Colors.red.shade50,
+                                  child: const Icon(Icons.emergency_rounded, color: Colors.red),
+                                ),
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        item['category_name']?.toString() ?? 'Emergency Alert',
+                                        style: GoogleFonts.outfit(fontWeight: FontWeight.bold, fontSize: 16),
                                       ),
-                                );
-                            context.push('/sos-detail', extra: notificationModel);
-                          },
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: Colors.red.shade900,
-                            foregroundColor: Colors.white,
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                          ),
-                          child: const Text('View'),
+                                      const SizedBox(height: 2),
+                                      Text(
+                                        'Resident: ${item['resident_name'] ?? 'Unknown'}',
+                                        style: GoogleFonts.inter(fontSize: 13, color: Colors.grey.shade600),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                  decoration: BoxDecoration(
+                                    color: (isAssigned ? Colors.blue : Colors.orange).withOpacity(0.1),
+                                    borderRadius: BorderRadius.circular(8),
+                                  ),
+                                  child: Text(
+                                    item['status'] ?? 'Pending',
+                                    style: GoogleFonts.inter(
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.bold,
+                                      color: isAssigned ? Colors.blue : Colors.orange,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 8),
+                            Text(
+                              'Message: ${item['message'] ?? 'Immediate assistance requested'}',
+                              style: GoogleFonts.inter(fontSize: 13),
+                            ),
+                            if (assignedResponder != null) ...[
+                              const SizedBox(height: 4),
+                              Text(
+                                'Assigned to: $assignedResponder',
+                                style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.blue),
+                              ),
+                            ],
+                            const SizedBox(height: 12),
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: ElevatedButton.icon(
+                                    onPressed: (isAccepting || (isAssigned && assignedResponder != null))
+                                        ? null
+                                        : () => _acceptIncident(item),
+                                    icon: isAccepting
+                                        ? const SizedBox(
+                                            width: 16,
+                                            height: 16,
+                                            child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                                          )
+                                        : const Icon(Icons.check_circle_outline_rounded, size: 18),
+                                    label: Text(
+                                      isAssigned ? 'Assigned' : 'Accept Incident',
+                                      style: GoogleFonts.inter(fontWeight: FontWeight.bold),
+                                    ),
+                                    style: ElevatedButton.styleFrom(
+                                      backgroundColor: isAssigned ? Colors.grey : Colors.green.shade700,
+                                      foregroundColor: Colors.white,
+                                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                OutlinedButton(
+                                  onPressed: () {
+                                    if (isAssigned) {
+                                      context.push('/assigned-incident', extra: Map<String, dynamic>.from(item));
+                                    } else {
+                                      final fakeNotif = {
+                                        'id': 'inc_${item['id']}',
+                                        'title': 'Emergency SOS',
+                                        'message': '${item['resident_name']} needs help.',
+                                        'category': 'sos',
+                                        'is_read': false,
+                                        'created_at': item['created_at'],
+                                        'priority': item['priority'] ?? 'HIGH',
+                                        'location': item['address'] ?? '',
+                                        'incident': item['id'],
+                                        'resident_name': item['resident_name'] ?? '',
+                                        'emergency_category': item['category_name'] ?? '',
+                                        'incident_message': item['message'] ?? '',
+                                        'incident_status': item['status'] ?? 'Pending',
+                                      };
+                                      final notificationModel = context.read<NotificationsProvider>().notifications.firstWhere(
+                                            (notif) => notif.incidentId == item['id'],
+                                            orElse: () => context.read<NotificationsProvider>().guardianNotifications.firstWhere(
+                                                  (notif) => notif.incidentId == item['id'],
+                                                  orElse: () => AppNotificationModel.fromJson(fakeNotif),
+                                                ),
+                                          );
+                                      context.push('/sos-detail', extra: notificationModel);
+                                    }
+                                  },
+                                  style: OutlinedButton.styleFrom(
+                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                                  ),
+                                  child: const Text('View'),
+                                ),
+                              ],
+                            ),
+                          ],
                         ),
                       ),
                     );

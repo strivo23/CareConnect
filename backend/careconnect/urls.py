@@ -25,8 +25,21 @@ from sos.views import (
     IncidentEscalationDetailView,
     SOSAcceptAPIView,
     SOSRejectAPIView,
+    SOSStatusTransitionAPIView,
+    SOSClosureAPIView,
+    SOSTimelineAPIView,
+    SOSChatAPIView,
+    IncidentResponseUpdateAPIView,
 )
-from accounts.views import SendOTPAPIView, VerifyOTPAPIView, ResendOTPAPIView
+from sos.security_views import (
+    SecurityDashboardSummaryAPIView,
+    SecurityIncidentsListAPIView,
+    SecurityIncidentResolutionAPIView,
+    SecurityReportingSummaryAPIView,
+)
+from accounts.directory_views import ContactDirectoryAPIView
+from accounts.views import SendOTPAPIView, VerifyOTPAPIView, ResendOTPAPIView, LogoutAPIView, ForgotPasswordAPIView, VerifyResetOTPAPIView, ResetPasswordAPIView
+from society.reports_views import ReportDownloadAPIView
 
 from emergency.views import (
     GenerateGuardianCodeView,
@@ -36,7 +49,9 @@ from emergency.views import (
     UnlinkGuardianView,
     ResidentGuardiansView,
     ChangePrimaryGuardianView,
+    GuardianDashboardAPIView,
 )
+
 
 from django.conf import settings
 from django.conf.urls.static import static
@@ -49,12 +64,17 @@ urlpatterns = [
     path("api/token/refresh/", TokenRefreshView.as_view(),     name="token_refresh"),
 
     # OTP auth
-    path("api/auth/send-otp/",     SendOTPAPIView.as_view(),       name="send_otp"),
-    path("api/auth/verify-otp/",   VerifyOTPAPIView.as_view(),     name="verify_otp"),
-    path("api/auth/resend-otp/",   ResendOTPAPIView.as_view(),     name="resend_otp"),
+    path("api/auth/send-otp/",        SendOTPAPIView.as_view(),       name="send_otp"),
+    path("api/auth/verify-otp/",      VerifyOTPAPIView.as_view(),     name="verify_otp"),
+    path("api/auth/resend-otp/",      ResendOTPAPIView.as_view(),     name="resend_otp"),
+    path("api/auth/logout/",          LogoutAPIView.as_view(),        name="auth_logout"),
+    path("api/auth/forgot-password/", ForgotPasswordAPIView.as_view(), name="auth-forgot-password"),
+    path("api/auth/verify-reset-otp/", VerifyResetOTPAPIView.as_view(), name="auth-verify-reset-otp"),
+    path("api/auth/reset-password/",  ResetPasswordAPIView.as_view(),  name="auth-reset-password"),
 
     # App routes
     path("api/accounts/",      include("accounts.urls")),
+    path("api/society/reports/download/", ReportDownloadAPIView.as_view(), name="society-reports-download"),
     path("api/society/",       include("society.urls")),
     path("api/emergency/",     include("emergency.urls")),
     path("api/notifications/", include("notifications.urls")),
@@ -72,8 +92,27 @@ urlpatterns = [
     path("api/incident/<int:pk>/accept/", SOSAcceptAPIView.as_view(), name="direct-incident-accept-slash"),
     path("api/incident/<int:pk>/reject", SOSRejectAPIView.as_view(), name="direct-incident-reject"),
     path("api/incident/<int:pk>/reject/", SOSRejectAPIView.as_view(), name="direct-incident-reject-slash"),
+    path("api/incident/<int:pk>/status", SOSStatusTransitionAPIView.as_view(), name="direct-incident-status"),
+    path("api/incident/<int:pk>/status/", SOSStatusTransitionAPIView.as_view(), name="direct-incident-status-slash"),
+    path("api/incident/<int:pk>/closure", SOSClosureAPIView.as_view(), name="direct-incident-closure"),
+    path("api/incident/<int:pk>/closure/", SOSClosureAPIView.as_view(), name="direct-incident-closure-slash"),
+    path("api/incident/<int:pk>/timeline", SOSTimelineAPIView.as_view(), name="direct-incident-timeline"),
+    path("api/incident/<int:pk>/timeline/", SOSTimelineAPIView.as_view(), name="direct-incident-timeline-slash"),
+    path("api/incident/<int:pk>/chat", SOSChatAPIView.as_view(), name="direct-incident-chat"),
+    path("api/incident/<int:pk>/chat/", SOSChatAPIView.as_view(), name="direct-incident-chat-slash"),
+    path("api/directory/", ContactDirectoryAPIView.as_view(), name="direct-contact-directory"),
+    path("api/incident/<int:pk>/updates", IncidentResponseUpdateAPIView.as_view(), name="direct-incident-updates"),
+    path("api/incident/<int:pk>/updates/", IncidentResponseUpdateAPIView.as_view(), name="direct-incident-updates-slash"),
+    path("api/security/dashboard/", SecurityDashboardSummaryAPIView.as_view(), name="direct-security-dashboard"),
+    path("api/security/incidents/", SecurityIncidentsListAPIView.as_view(), name="direct-security-incidents"),
+    path("api/security/incidents/<int:pk>/resolution/", SecurityIncidentResolutionAPIView.as_view(), name="direct-security-incident-resolution"),
+    path("api/security/reports/summary/", SecurityReportingSummaryAPIView.as_view(), name="direct-security-reports-summary"),
+    path("api/reports/download/", ReportDownloadAPIView.as_view(), name="direct-report-download"),
+    path("api/reports/download", ReportDownloadAPIView.as_view(), name="direct-report-download-noslash"),
 
     # Direct Guardian & Resident Code Linking APIs
+    path("api/guardian/dashboard/", GuardianDashboardAPIView.as_view(), name="guardian-dashboard"),
+    path("api/emergency/guardians/dashboard/", GuardianDashboardAPIView.as_view(), name="emergency-guardian-dashboard"),
     path("api/guardian/generate-code/", GenerateGuardianCodeView.as_view(), name="guardian-generate-code"),
     path("api/guardian/my-code/", MyGuardianCodeView.as_view(), name="guardian-my-code"),
     path("api/guardian/respond-link/", RespondGuardianLinkView.as_view(), name="guardian-respond-link"),
@@ -83,10 +122,14 @@ urlpatterns = [
     path("api/resident/guardians/", ResidentGuardiansView.as_view(), name="resident-guardians"),
     path("api/resident/change-primary/", ChangePrimaryGuardianView.as_view(), name="resident-change-primary"),
 
-    # API Documentation
+
+    # API Documentation & Swagger UI
     path("api/schema/",        SpectacularAPIView.as_view(),        name="schema"),
     path("api/docs/swagger/",  SpectacularSwaggerView.as_view(url_name="schema"), name="swagger-ui"),
     path("api/docs/redoc/",    SpectacularRedocView.as_view(url_name="schema"),   name="redoc"),
+    path("swagger/",           SpectacularSwaggerView.as_view(url_name="schema"), name="swagger-alias"),
+    path("redoc/",             SpectacularRedocView.as_view(url_name="schema"),   name="redoc-alias"),
+    path("docs/",              SpectacularSwaggerView.as_view(url_name="schema"), name="docs-alias"),
 ]
 
 if settings.DEBUG:

@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import '../../providers/app_state_provider.dart';
+import '../../core/localization/app_localizations.dart';
 import '../../services/society_repository.dart';
 import '../../models/society_model.dart';
 

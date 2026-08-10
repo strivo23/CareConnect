@@ -1,9 +1,10 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { 
   Box, Button, Typography, Dialog, DialogTitle, DialogContent, 
-  DialogActions, TextField, MenuItem, Snackbar, Alert, CircularProgress
+  DialogActions, TextField, MenuItem, Snackbar, Alert, CircularProgress,
+  Chip, Tooltip, IconButton
 } from '@mui/material';
-import { MdAdd } from 'react-icons/md';
+import { MdAdd, MdAssignmentInd, MdPerson, MdRefresh } from 'react-icons/md';
 import SearchBar from '../components/SearchBar/SearchBar';
 import DataTable from '../components/DataTable/DataTable';
 import { societyService } from '../services/api';
@@ -18,24 +19,28 @@ const Society = () => {
   const [rowsPerPage, setRowsPerPage] = useState(5);
   const [totalCount, setTotalCount] = useState(0);
 
-  // Dialog State
+  // Dialog States
   const [openForm, setOpenForm] = useState(false);
   const [openDelete, setOpenDelete] = useState(false);
+  const [openAssignManager, setOpenAssignManager] = useState(false);
+
   const [selectedSociety, setSelectedSociety] = useState(null);
+  const [eligibleManagers, setEligibleManagers] = useState([]);
+  const [selectedManagerId, setSelectedManagerId] = useState('');
   
   // Snackbar State
   const [snackbar, setSnackbar] = useState({ open: false, message: '', severity: 'success' });
 
-  // Form State
+  // Normalized Form State (Stores strictly society infrastructure details)
   const [formData, setFormData] = useState({
     name: '',
+    code: '',
     address: '',
     city: '',
     state: '',
     pincode: '',
-    contact_person: '',
-    contact_number: '',
-    email: '',
+    country: 'India',
+    description: '',
     status: 'Active'
   });
 
@@ -61,6 +66,15 @@ const Society = () => {
     fetchSocieties();
   }, [fetchSocieties]);
 
+  const fetchEligibleManagers = async () => {
+    try {
+      const res = await societyService.getEligibleManagers();
+      setEligibleManagers(res.data || []);
+    } catch (err) {
+      console.error('Failed to fetch eligible managers:', err);
+    }
+  };
+
   const handleSearch = (val) => {
     setSearchTerm(val);
     setPage(0);
@@ -79,13 +93,13 @@ const Society = () => {
     setSelectedSociety(null);
     setFormData({
       name: '',
+      code: '',
       address: '',
       city: '',
       state: '',
       pincode: '',
-      contact_person: '',
-      contact_number: '',
-      email: '',
+      country: 'India',
+      description: '',
       status: 'Active'
     });
     setOpenForm(true);
@@ -94,15 +108,15 @@ const Society = () => {
   const handleOpenEdit = (society) => {
     setSelectedSociety(society);
     setFormData({
-      name: society.name,
-      address: society.address,
-      city: society.city,
-      state: society.state,
-      pincode: society.pincode,
-      contact_person: society.contact_person,
-      contact_number: society.contact_number,
-      email: society.email,
-      status: society.status
+      name: society.name || '',
+      code: society.code || '',
+      address: society.address || '',
+      city: society.city || '',
+      state: society.state || '',
+      pincode: society.pincode || '',
+      country: society.country || 'India',
+      description: society.description || '',
+      status: society.status || 'Active'
     });
     setOpenForm(true);
   };
@@ -112,12 +126,27 @@ const Society = () => {
     setOpenDelete(true);
   };
 
-  const handleCloseForm = () => {
-    setOpenForm(false);
+  const handleOpenAssignManager = (society) => {
+    setSelectedSociety(society);
+    setSelectedManagerId(society.society_manager || '');
+    fetchEligibleManagers();
+    setOpenAssignManager(true);
   };
 
-  const handleCloseDelete = () => {
-    setOpenDelete(false);
+  const handleSaveManagerAssignment = async () => {
+    if (!selectedSociety) return;
+    setLoading(true);
+    try {
+      await societyService.assignManager(selectedSociety.id, selectedManagerId || null);
+      setSnackbar({ open: true, message: 'Society Manager assigned successfully!', severity: 'success' });
+      setOpenAssignManager(false);
+      fetchSocieties();
+    } catch (err) {
+      console.error(err);
+      setSnackbar({ open: true, message: 'Failed to assign Society Manager.', severity: 'error' });
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleFormChange = (e) => {
@@ -168,11 +197,27 @@ const Society = () => {
   };
 
   const columns = [
-    { id: 'name', label: 'Society Name', minWidth: 200 },
-    { id: 'contact_person', label: 'Contact Person', minWidth: 150 },
-    { id: 'contact_number', label: 'Contact Number', minWidth: 120 },
-    { id: 'email', label: 'Email', minWidth: 150 },
-    { id: 'city', label: 'City', minWidth: 120 },
+    { id: 'code', label: 'Society Code', minWidth: 120, format: (val) => val || 'N/A' },
+    { id: 'name', label: 'Society Name', minWidth: 180 },
+    { id: 'city', label: 'City', minWidth: 110 },
+    { id: 'state', label: 'State', minWidth: 110 },
+    { id: 'country', label: 'Country', minWidth: 100, format: (val) => val || 'India' },
+    { 
+      id: 'society_manager_name', 
+      label: 'Society Manager', 
+      minWidth: 170,
+      format: (val, row) => (
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+          <Chip
+            icon={<MdPerson size={16} />}
+            label={val || 'Unassigned'}
+            size="small"
+            color={val ? 'primary' : 'default'}
+            sx={{ fontWeight: 700, borderRadius: '8px' }}
+          />
+        </Box>
+      )
+    },
     { id: 'total_blocks', label: 'Blocks', minWidth: 80, align: 'center' },
     { id: 'total_flats', label: 'Flats', minWidth: 80, align: 'center' },
     { 
@@ -192,27 +237,49 @@ const Society = () => {
         </span>
       )
     },
+    {
+      id: 'actions',
+      label: 'Assign Manager',
+      minWidth: 130,
+      align: 'center',
+      format: (val, row) => (
+        <Button
+          size="small"
+          variant="outlined"
+          startIcon={<MdAssignmentInd />}
+          onClick={(e) => { e.stopPropagation(); handleOpenAssignManager(row); }}
+          sx={{ borderRadius: '8px', fontSize: '0.75rem', textTransform: 'none', fontWeight: 700 }}
+        >
+          Assign
+        </Button>
+      )
+    }
   ];
 
   return (
     <Box>
-      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 4 }}>
-        <Typography variant="h5" fontWeight="bold">
-          Manage Societies
-        </Typography>
-        <Button variant="contained" color="primary" startIcon={<MdAdd />} onClick={handleOpenAdd}>
+      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
+        <Box>
+          <Typography variant="h5" fontWeight="bold">
+            Gated Society Infrastructure Management
+          </Typography>
+          <Typography variant="body2" color="text.secondary">
+            Manage normalized society profiles, location parameters, and assign verified Society Managers.
+          </Typography>
+        </Box>
+        <Button variant="contained" color="primary" startIcon={<MdAdd />} onClick={handleOpenAdd} sx={{ borderRadius: '12px' }}>
           Add Society
         </Button>
       </Box>
 
       <Box sx={{ mb: 3 }}>
         <SearchBar 
-          placeholder="Search by name, city, state, or contact..." 
+          placeholder="Search by society code, name, city, state, or country..." 
           onSearch={handleSearch}
         />
       </Box>
 
-      {loading && !openForm && !openDelete ? (
+      {loading && !openForm && !openDelete && !openAssignManager ? (
         <Box sx={{ display: 'flex', justifyContent: 'center', py: 5 }}>
           <CircularProgress color="primary" />
         </Box>
@@ -231,29 +298,44 @@ const Society = () => {
         />
       )}
 
-      {/* Add / Edit Form Dialog */}
-      <Dialog open={openForm} onClose={handleCloseForm} maxWidth="sm" fullWidth>
-        <DialogTitle>{selectedSociety ? 'Edit Society' : 'Add New Society'}</DialogTitle>
+      {/* Normalized Add / Edit Form Dialog (ONLY Society Infrastructure Details) */}
+      <Dialog open={openForm} onClose={() => setOpenForm(false)} maxWidth="sm" fullWidth PaperProps={{ sx: { borderRadius: '20px', p: 1 } }}>
+        <DialogTitle sx={{ fontWeight: 800 }}>{selectedSociety ? 'Edit Society Infrastructure' : 'Add New Gated Society'}</DialogTitle>
         <form onSubmit={handleFormSubmit}>
           <DialogContent sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-            <TextField
-              name="name"
-              label="Society Name"
-              value={formData.name}
-              onChange={handleFormChange}
-              fullWidth
-              required
-            />
+            <Box sx={{ display: 'flex', gap: 2 }}>
+              <TextField
+                name="name"
+                label="Society Name"
+                value={formData.name}
+                onChange={handleFormChange}
+                fullWidth
+                required
+                size="small"
+              />
+              <TextField
+                name="code"
+                label="Society Code (Unique)"
+                placeholder="e.g. SOC-GR-01"
+                value={formData.code}
+                onChange={handleFormChange}
+                fullWidth
+                size="small"
+              />
+            </Box>
+
             <TextField
               name="address"
-              label="Address"
+              label="Street Address"
               value={formData.address}
               onChange={handleFormChange}
               fullWidth
               multiline
               rows={2}
               required
+              size="small"
             />
+
             <Box sx={{ display: 'flex', gap: 2 }}>
               <TextField
                 name="city"
@@ -262,6 +344,7 @@ const Society = () => {
                 onChange={handleFormChange}
                 fullWidth
                 required
+                size="small"
               />
               <TextField
                 name="state"
@@ -270,7 +353,11 @@ const Society = () => {
                 onChange={handleFormChange}
                 fullWidth
                 required
+                size="small"
               />
+            </Box>
+
+            <Box sx={{ display: 'flex', gap: 2 }}>
               <TextField
                 name="pincode"
                 label="Pincode"
@@ -278,33 +365,30 @@ const Society = () => {
                 onChange={handleFormChange}
                 fullWidth
                 required
+                size="small"
+              />
+              <TextField
+                name="country"
+                label="Country"
+                value={formData.country}
+                onChange={handleFormChange}
+                fullWidth
+                required
+                size="small"
               />
             </Box>
+
             <TextField
-              name="contact_person"
-              label="Contact Person"
-              value={formData.contact_person}
+              name="description"
+              label="Society Description / Amenities (Optional)"
+              value={formData.description}
               onChange={handleFormChange}
               fullWidth
-              required
+              multiline
+              rows={2}
+              size="small"
             />
-            <TextField
-              name="contact_number"
-              label="Contact Number"
-              value={formData.contact_number}
-              onChange={handleFormChange}
-              fullWidth
-              required
-            />
-            <TextField
-              name="email"
-              label="Email"
-              type="email"
-              value={formData.email}
-              onChange={handleFormChange}
-              fullWidth
-              required
-            />
+
             <TextField
               name="status"
               label="Status"
@@ -313,29 +397,63 @@ const Society = () => {
               onChange={handleFormChange}
               fullWidth
               required
+              size="small"
             >
               <MenuItem value="Active">Active</MenuItem>
               <MenuItem value="Inactive">Inactive</MenuItem>
             </TextField>
           </DialogContent>
-          <DialogActions>
-            <Button onClick={handleCloseForm}>Cancel</Button>
-            <Button type="submit" variant="contained" disabled={loading}>
-              {loading ? <CircularProgress size={20} color="inherit" /> : 'Save'}
+          <DialogActions sx={{ px: 3, pb: 2 }}>
+            <Button onClick={() => setOpenForm(false)}>Cancel</Button>
+            <Button type="submit" variant="contained" disabled={loading} sx={{ borderRadius: '10px', px: 3 }}>
+              {loading ? <CircularProgress size={20} color="inherit" /> : 'Save Society'}
             </Button>
           </DialogActions>
         </form>
       </Dialog>
 
+      {/* Dedicated Assign Society Manager Dialog */}
+      <Dialog open={openAssignManager} onClose={() => setOpenAssignManager(false)} maxWidth="xs" fullWidth PaperProps={{ sx: { borderRadius: '20px', p: 1 } }}>
+        <DialogTitle sx={{ fontWeight: 800 }}>
+          Assign Society Manager
+        </DialogTitle>
+        <DialogContent sx={{ display: 'flex', flexDirection: 'column', gap: 2, pt: 1 }}>
+          <Typography variant="body2" color="text.secondary">
+            Select a verified user with the <strong>Society Manager</strong> or <strong>Admin</strong> role to manage <strong>{selectedSociety?.name}</strong>.
+          </Typography>
+          <TextField
+            select
+            label="Select Verified Society Manager"
+            value={selectedManagerId}
+            onChange={(e) => setSelectedManagerId(e.target.value)}
+            fullWidth
+            size="small"
+          >
+            <MenuItem value="">Unassigned (None)</MenuItem>
+            {eligibleManagers.map((mgr) => (
+              <MenuItem key={mgr.id} value={mgr.id}>
+                {mgr.full_name} ({mgr.email}) — Role: {mgr.role}
+              </MenuItem>
+            ))}
+          </TextField>
+        </DialogContent>
+        <DialogActions sx={{ px: 3, pb: 2 }}>
+          <Button onClick={() => setOpenAssignManager(false)}>Cancel</Button>
+          <Button variant="contained" onClick={handleSaveManagerAssignment} disabled={loading} sx={{ borderRadius: '10px', px: 3 }}>
+            {loading ? <CircularProgress size={20} color="inherit" /> : 'Save Assignment'}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
       {/* Delete Confirmation Dialog */}
-      <Dialog open={openDelete} onClose={handleCloseDelete}>
-        <DialogTitle>Confirm Delete</DialogTitle>
+      <Dialog open={openDelete} onClose={() => setOpenDelete(false)}>
+        <DialogTitle sx={{ fontWeight: 800 }}>Confirm Delete</DialogTitle>
         <DialogContent>
           Are you sure you want to delete society "{selectedSociety?.name}"? All associated blocks and flats will be permanently deleted.
         </DialogContent>
-        <DialogActions>
-          <Button onClick={handleCloseDelete}>Cancel</Button>
-          <Button onClick={handleDeleteSubmit} variant="contained" color="error" disabled={loading}>
+        <DialogActions sx={{ px: 3, pb: 2 }}>
+          <Button onClick={() => setOpenDelete(false)}>Cancel</Button>
+          <Button onClick={handleDeleteSubmit} variant="contained" color="error" disabled={loading} sx={{ borderRadius: '10px' }}>
             {loading ? <CircularProgress size={20} color="inherit" /> : 'Delete'}
           </Button>
         </DialogActions>
