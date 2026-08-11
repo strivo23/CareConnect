@@ -18,6 +18,9 @@ class ApiClient {
     _dio.interceptors.add(
       InterceptorsWrapper(
         onRequest: (options, handler) async {
+          if (options.baseUrl.endsWith('/api') && options.path.startsWith('/api/')) {
+            options.path = options.path.substring(4);
+          }
           final token = await LocalStorageService.instance.getString(AppConstants.apiTokenKey);
           if (token != null && token.isNotEmpty) {
             options.headers['Authorization'] = 'Bearer $token';
