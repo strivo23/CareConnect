@@ -20,15 +20,23 @@ except ImportError:
     messaging = None
 
 _firebase_initialized = False
-if firebase_admin:
+if firebase_admin and not firebase_admin._apps:
     try:
-        service_account_path = getattr(settings, 'FIREBASE_SERVICE_ACCOUNT_PATH', None)
-        if service_account_path and os.path.exists(service_account_path):
-            if not firebase_admin._apps:
+        import json
+        raw_json = os.environ.get('FIREBASE_SERVICE_ACCOUNT_JSON', '').strip()
+        if raw_json:
+            service_account_info = json.loads(raw_json)
+            cred = credentials.Certificate(service_account_info)
+            firebase_admin.initialize_app(cred)
+            _firebase_initialized = True
+            logger.info("Firebase Admin SDK initialized via environment JSON.")
+        else:
+            service_account_path = getattr(settings, 'FIREBASE_SERVICE_ACCOUNT_PATH', None)
+            if service_account_path and os.path.exists(service_account_path):
                 cred = credentials.Certificate(service_account_path)
                 firebase_admin.initialize_app(cred)
-            _firebase_initialized = True
-            logger.info("Firebase Admin SDK initialized.")
+                _firebase_initialized = True
+                logger.info("Firebase Admin SDK initialized via certificate file.")
     except Exception as e:
         logger.warning(f"Firebase Admin SDK initialization skipped: {e}")
 
