@@ -17,6 +17,7 @@ import '../features/dashboard/sos_message_screen.dart';
 import '../features/dashboard/sos_review_screen.dart';
 import '../features/dashboard/sos_success_screen.dart';
 import '../features/dashboard/assigned_incident_screen.dart';
+import '../features/chat/emergency_chat_screen.dart';
 
 class AppRouter {
   static GoRouter? _router;
@@ -149,6 +150,13 @@ class AppRouter {
           builder: (context, state) {
             final incidentData = state.extra as Map<String, dynamic>;
             return AssignedIncidentScreen(incidentData: incidentData);
+          },
+        ),
+        GoRoute(
+          path: '/emergency-chat',
+          builder: (context, state) {
+            final args = state.extra as Map<String, dynamic>;
+            return EmergencyChatScreen(incidentData: args);
           },
         ),
       ],

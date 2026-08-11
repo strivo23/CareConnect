@@ -60,7 +60,7 @@ class _EmergencyChatScreenState extends State<EmergencyChatScreen> {
     if (incidentId == null) return;
 
     try {
-      final res = await ApiClient.instance.get('/sos/incidents/$incidentId/chat/');
+      final res = await ApiClient.instance.get('/api/sos/incidents/$incidentId/chat/');
       if (res.data != null) {
         final List results = res.data['results'] ?? res.data ?? [];
         setState(() {
@@ -138,7 +138,7 @@ class _EmergencyChatScreenState extends State<EmergencyChatScreen> {
     } else {
       try {
         final incidentId = _incident['id'];
-        await ApiClient.instance.post('/sos/incidents/$incidentId/chat/', data: {
+        await ApiClient.instance.post('/api/sos/incidents/$incidentId/chat/', data: {
           'message': text,
           'message_type': type,
           if (_replyingTo != null) 'reply_to': _replyingTo!['id'],

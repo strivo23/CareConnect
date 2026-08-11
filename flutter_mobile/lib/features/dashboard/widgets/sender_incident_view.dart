@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
+import 'package:go_router/go_router.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../models/sos_incident_model.dart';
 
@@ -327,6 +328,31 @@ class SenderIncidentView extends StatelessWidget {
           const SizedBox(height: 24),
 
           // 5. Cancel SOS Button (Only if permitted)
+          // Emergency Chat Button for Resident (Sender)
+          SizedBox(
+            width: double.infinity,
+            height: 52,
+            child: ElevatedButton.icon(
+              onPressed: () {
+                if (incident.id > 0) {
+                  context.push('/emergency-chat', extra: {'id': incident.id});
+                }
+              },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppTheme.primary,
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                elevation: 2,
+              ),
+              icon: const Icon(Icons.chat_bubble_outline_rounded),
+              label: Text(
+                'Open Emergency Chat',
+                style: GoogleFonts.outfit(fontSize: 16, fontWeight: FontWeight.bold),
+              ),
+            ),
+          ),
+          const SizedBox(height: 14),
+
           if (_canCancel && onCancelSOS != null) ...[
             SizedBox(
               width: double.infinity,
