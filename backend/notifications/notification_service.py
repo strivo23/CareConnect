@@ -352,7 +352,7 @@ def notify_guardians(incident) -> int:
     notified_emails = set()
 
     # 1. ResidentGuardian linked accounts (Both Primary & Secondary)
-    links = ResidentGuardian.objects.filter(resident=resident, status='Active').select_related('guardian')
+    links = ResidentGuardian.objects.filter(resident=resident, status='Active').exclude(guardian__id=resident.id).select_related('guardian')
     for link in links:
         guardian_user = link.guardian
         if not guardian_user:
@@ -455,11 +455,12 @@ def _send_guardian_sos_email(to_email: str, incident, guardian_name: str = 'Guar
 def notify_security(incident) -> int:
     """
     Notify all security guards and society admins for an SOS incident.
+    Excludes the incident resident if they hold an admin/security role.
     """
     resident = incident.resident
     society = getattr(resident, 'society', None)
     
-    security_users = User.objects.filter(role__in=['SECURITY', 'ADMIN', 'SOCIETY_MANAGER'])
+    security_users = User.objects.filter(role__in=['SECURITY', 'ADMIN', 'SOCIETY_MANAGER']).exclude(id=resident.id)
     if society:
         security_users = security_users.filter(society=society)
 
@@ -489,8 +490,9 @@ def notify_security(incident) -> int:
 def notify_volunteers(incident) -> int:
     """
     Notify active community volunteers about an emergency SOS.
+    Excludes the incident resident if they are a registered volunteer.
     """
-    volunteers = User.objects.filter(role='VOLUNTEER', is_active=True)
+    volunteers = User.objects.filter(role='VOLUNTEER', is_active=True).exclude(id=incident.resident.id)
     count = 0
     for vol in volunteers:
         Notification.objects.create(

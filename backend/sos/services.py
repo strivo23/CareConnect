@@ -109,9 +109,9 @@ class SOSService:
             "User-Agent": "CareConnect/1.0 (Student Project)"
         }
 
-        for attempt in range(2):
+        for attempt in range(1):
             try:
-                response = requests.get(url, params=params, headers=headers, timeout=5)
+                response = requests.get(url, params=params, headers=headers, timeout=2)
                 if response.status_code == 200:
                     data = response.json()
                     addr = data.get("address", {})
