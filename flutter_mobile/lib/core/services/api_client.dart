@@ -188,6 +188,9 @@ class ApiClient {
       if (error.response?.statusCode == 401) {
         return 'Unauthorized. Please login again.';
       }
+      if (error.response?.statusCode == 502 || error.response?.statusCode == 503 || error.response?.statusCode == 504) {
+        return 'Server is temporarily warming up. Please try again in a few seconds.';
+      }
       if (error.response?.data != null) {
         final data = error.response!.data;
         if (data is Map) {
@@ -208,6 +211,9 @@ class ApiClient {
             }
           }
         } else if (data is String && data.isNotEmpty) {
+          if (data.trim().startsWith('<')) {
+            return 'Server is warming up. Please try again in a few seconds.';
+          }
           return data;
         }
       }
@@ -222,4 +228,3 @@ class ApiClient {
     return raw.isNotEmpty ? raw : 'An unexpected error occurred. Please try again.';
   }
 }
-
