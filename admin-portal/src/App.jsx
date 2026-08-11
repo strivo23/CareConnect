@@ -20,7 +20,7 @@ import Reports from './pages/Reports';
 import Settings from './pages/Settings';
 import Emergency from './pages/Emergency';
 import NotificationTemplates from './pages/NotificationTemplates';
-import EscalationSettings from './pages/EscalationSettings';
+import Escalation from './pages/Escalation';
 
 const App = () => {
   return (
@@ -42,11 +42,12 @@ const App = () => {
           <Route path="volunteers" element={<Volunteers />} />
           <Route path="security" element={<Security />} />
           <Route path="emergency" element={<Emergency />} />
+          <Route path="escalation" element={<Escalation />} />
           <Route path="users" element={<Users />} />
           <Route path="alerts" element={<Alerts />} />
           <Route path="reports" element={<Reports />} />
           <Route path="notification-templates" element={<NotificationTemplates />} />
-          <Route path="escalation-settings" element={<EscalationSettings />} />
+          <Route path="escalation-settings" element={<Escalation />} />
           <Route path="settings" element={<Settings />} />
         </Route>
       </Routes>

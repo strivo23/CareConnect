@@ -205,4 +205,13 @@ export const sosService = {
   createResponseUpdate: (id, data) => apiClient.post(`/sos/incidents/${id}/updates/`, data),
 };
 
+export const escalationService = {
+  getConfig: () => apiClient.get('/escalation/config/'),
+  updateConfig: (data) => apiClient.post('/escalation/config/', data),
+  getLogs: (params) => apiClient.get('/escalation/logs/', { params }),
+  getIncidentEscalation: (id) => apiClient.get(`/incident/${id}/escalation/`),
+  getIncidentTimeline: (id) => apiClient.get(`/incident/${id}/timeline/`),
+  manualEscalate: (id, data = {}) => apiClient.post(`/incident/${id}/escalation/`, data),
+};
+
 export default apiClient;
