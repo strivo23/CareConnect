@@ -57,6 +57,7 @@ from django.conf import settings
 from django.conf.urls.static import static
 
 urlpatterns = [
+    path("", HealthCheckAPIView.as_view(), name="root_health_check"),
     path("admin/", admin.site.urls),
     path("api/health/", HealthCheckAPIView.as_view(), name="health_check"),
 
