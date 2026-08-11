@@ -79,9 +79,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
               label: 'VIEW',
               textColor: Colors.yellowAccent,
               onPressed: () {
-                if (newAlert.incidentId > 0) {
-                  context.push('/sos-message', extra: {'incidentId': newAlert.incidentId});
-                }
+                context.push('/sos-detail', extra: newAlert);
               },
             ),
           ),
@@ -350,9 +348,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                                       if (!notif.isRead) {
                                         provider.markAsRead(notif.id);
                                       }
-                                      if (notif.incidentId > 0) {
-                                        context.push('/sos-message', extra: {'incidentId': notif.incidentId});
-                                      }
+                                      context.push('/sos-detail', extra: notif);
                                     }
                                   },
                                   child: Padding(
