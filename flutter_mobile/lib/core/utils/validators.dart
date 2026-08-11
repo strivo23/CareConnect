@@ -17,6 +17,8 @@ class Validators {
     return null;
   }
 
+  static String? validateEmail(String? value) => email(value);
+
   static String? password(String? value) {
     if (value == null || value.isEmpty) {
       return 'Password is required';
@@ -26,4 +28,6 @@ class Validators {
     }
     return null;
   }
+
+  static String? validatePassword(String? value) => password(value);
 }

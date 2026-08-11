@@ -1,13 +1,8 @@
-import 'package:flutter/foundation.dart' show kIsWeb;
+import '../config/api_config.dart';
 
 class AppConstants {
   static const appName = 'CareConnect';
-  static const defaultBaseUrl = kIsWeb
-      ? 'http://localhost:8000'
-      : String.fromEnvironment(
-          'API_BASE_URL',
-          defaultValue: 'http://10.0.2.2:8000',
-        );
+  static const defaultBaseUrl = ApiConfig.baseUrl;
 
   static const apiTokenKey = 'careconnect_access_token';
   static const apiRefreshTokenKey = 'careconnect_refresh_token';
