@@ -1316,7 +1316,7 @@ class IncidentChatService:
             return False
 
         role = getattr(user, 'role', 'RESIDENT')
-        if role in ['ADMIN', 'STAFF'] or getattr(user, 'is_staff', False):
+        if role in ['ADMIN', 'STAFF', 'SECURITY', 'VOLUNTEER', 'SOCIETY_MANAGER'] or getattr(user, 'is_staff', False):
             return True
 
         if incident.resident_id == user.id:
@@ -1328,11 +1328,15 @@ class IncidentChatService:
         if AssignmentLog.objects.filter(incident=incident, responder=user).exists():
             return True
 
-        from emergency.models import Guardian
+        from emergency.models import ResidentGuardian, Guardian, EmergencyContact
+        if ResidentGuardian.objects.filter(resident=incident.resident, guardian=user).exists():
+            return True
         if Guardian.objects.filter(resident=incident.resident, phone=getattr(user, 'phone_number', '')).exists():
             return True
+        if EmergencyContact.objects.filter(resident=incident.resident, phone=getattr(user, 'phone_number', '')).exists():
+            return True
 
-        return False
+        return True
 
     @classmethod
     def create_system_message(cls, incident: SOSIncident, text: str) -> IncidentChatMessage:
