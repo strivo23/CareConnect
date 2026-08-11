@@ -154,6 +154,15 @@ class _SOSMessageScreenState extends State<SOSMessageScreen> {
   }
 
   Future<void> _fetchCategories() async {
+    final defaultCategories = [
+      {'id': 1, 'name': 'Medical Emergency', 'description': 'Medical assistance or chest pain'},
+      {'id': 2, 'name': 'Fire Outbreak', 'description': 'Fire hazard or smoke outbreak'},
+      {'id': 3, 'name': 'Physical Assault', 'description': 'Physical danger or intruder'},
+      {'id': 4, 'name': 'Stuck in Elevator', 'description': 'Trapped in elevator or lift'},
+      {'id': 5, 'name': 'Severe Injury / Fall', 'description': 'Accident, fall, or severe injury'},
+      {'id': 6, 'name': 'General Emergency', 'description': 'General urgent assistance needed'},
+    ];
+
     try {
       final response = await ApiClient.instance.get('/api/sos/categories/');
       if (response.statusCode == 200) {
@@ -162,16 +171,30 @@ class _SOSMessageScreenState extends State<SOSMessageScreen> {
             : (response.data as Map<String, dynamic>)['results'] as List? ?? [];
         if (mounted) {
           setState(() {
-            _categories = data.map((e) => Map<String, dynamic>.from(e as Map)).toList();
-            if (_categories.isNotEmpty) {
-              _selectedCategory = _categories.first;
-            }
+            _categories = data.isNotEmpty
+                ? data.map((e) => Map<String, dynamic>.from(e as Map)).toList()
+                : defaultCategories;
+            _selectedCategory = _categories.first;
+            _isLoadingCategories = false;
+          });
+        }
+      } else {
+        if (mounted) {
+          setState(() {
+            _categories = defaultCategories;
+            _selectedCategory = _categories.first;
             _isLoadingCategories = false;
           });
         }
       }
     } catch (e) {
-      if (mounted) setState(() => _isLoadingCategories = false);
+      if (mounted) {
+        setState(() {
+          _categories = defaultCategories;
+          _selectedCategory = _categories.first;
+          _isLoadingCategories = false;
+        });
+      }
       debugPrint('Error fetching categories: $e');
     }
   }
@@ -383,6 +406,11 @@ class _SOSMessageScreenState extends State<SOSMessageScreen> {
               _messageController.selection = TextSelection.fromPosition(
                 TextPosition(offset: _messageController.text.length),
               );
+              final match = _categories.firstWhere(
+                (cat) => suggestion.toLowerCase().contains((cat['name'] ?? '').toString().toLowerCase()),
+                orElse: () => _categories.isNotEmpty ? _categories.first : {'id': 1, 'name': suggestion},
+              );
+              _selectedCategory = match;
             });
           },
           borderRadius: BorderRadius.circular(16),
