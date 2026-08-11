@@ -188,6 +188,16 @@ _cors_origins_env = os.environ.get("CORS_ALLOWED_ORIGINS", "")
 if _cors_origins_env:
     CORS_ALLOWED_ORIGINS = [origin.strip() for origin in _cors_origins_env.split(",") if origin.strip()]
 
+_csrf_origins_env = os.environ.get("CSRF_TRUSTED_ORIGINS", "")
+if _csrf_origins_env:
+    CSRF_TRUSTED_ORIGINS = [origin.strip() for origin in _csrf_origins_env.split(",") if origin.strip()]
+
+if not DEBUG:
+    SECURE_BROWSER_XSS_FILTER = True
+    X_FRAME_OPTIONS = "DENY"
+    SECURE_CONTENT_TYPE_NOSNIFF = True
+    SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
+
 
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': (

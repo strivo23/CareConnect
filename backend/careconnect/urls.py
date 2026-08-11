@@ -38,7 +38,7 @@ from sos.security_views import (
     SecurityReportingSummaryAPIView,
 )
 from accounts.directory_views import ContactDirectoryAPIView
-from accounts.views import SendOTPAPIView, VerifyOTPAPIView, ResendOTPAPIView, LogoutAPIView, ForgotPasswordAPIView, VerifyResetOTPAPIView, ResetPasswordAPIView
+from accounts.views import SendOTPAPIView, VerifyOTPAPIView, ResendOTPAPIView, LogoutAPIView, ForgotPasswordAPIView, VerifyResetOTPAPIView, ResetPasswordAPIView, HealthCheckAPIView
 from society.reports_views import ReportDownloadAPIView
 
 from emergency.views import (
@@ -58,6 +58,7 @@ from django.conf.urls.static import static
 
 urlpatterns = [
     path("admin/", admin.site.urls),
+    path("api/health/", HealthCheckAPIView.as_view(), name="health_check"),
 
     # JWT auth
     path("api/token/",         TokenObtainPairView.as_view(),  name="token_obtain_pair"),

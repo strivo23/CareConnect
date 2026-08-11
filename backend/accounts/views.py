@@ -9,6 +9,17 @@ from rest_framework_simplejwt.tokens import RefreshToken
 from .serializers import RegisterSerializer, LoginSerializer, ResidentProfileSerializer, UserSerializer
 from .models import ResidentProfile
 
+class HealthCheckAPIView(APIView):
+    permission_classes = []
+
+    def get(self, request):
+        return Response({
+            "status": "ok",
+            "service": "CareConnect API",
+            "timestamp": timezone.now().isoformat()
+        }, status=status.HTTP_200_OK)
+
+
 class RegisterAPIView(APIView):
     def post(self, request):
         serializer = RegisterSerializer(data=request.data)

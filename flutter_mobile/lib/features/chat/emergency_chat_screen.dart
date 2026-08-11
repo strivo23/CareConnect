@@ -80,8 +80,10 @@ class _EmergencyChatScreenState extends State<EmergencyChatScreen> {
     if (incidentId == null) return;
 
     final token = await ApiClient.getAccessToken();
+    final isSecure = ApiClient.baseUrl.startsWith('https');
+    final scheme = isSecure ? 'wss' : 'ws';
     final baseUrl = ApiClient.baseUrl.replaceAll('http://', '').replaceAll('https://', '').split('/')[0];
-    final wsUrl = 'ws://$baseUrl/ws/incidents/$incidentId/chat/?token=$token';
+    final wsUrl = '$scheme://$baseUrl/ws/incidents/$incidentId/chat/?token=$token';
 
     _connSubscription = _wsService.connectionStream.listen((connected) {
       if (mounted) setState(() => _isConnected = connected);

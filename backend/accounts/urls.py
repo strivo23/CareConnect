@@ -18,7 +18,8 @@ from .views import (
     SecurityAvailabilityAPIView,
     ForgotPasswordAPIView,
     VerifyResetOTPAPIView,
-    ResetPasswordAPIView
+    ResetPasswordAPIView,
+    HealthCheckAPIView
 )
 
 router = DefaultRouter()
@@ -29,6 +30,7 @@ router.register('guardians', GuardianProfileViewSet, basename='guardian')
 router.register('documents', UserDocumentViewSet, basename='document')
 
 urlpatterns = [
+    path("health/", HealthCheckAPIView.as_view(), name="health_check"),
     path("register/", RegisterAPIView.as_view(), name="register"),
     path("login/", LoginAPIView.as_view(), name="login"),
     path("logout/", LogoutAPIView.as_view(), name="logout"),

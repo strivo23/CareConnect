@@ -57,8 +57,11 @@ export default function EmergencyChatDrawer({ incident, isOpen, onClose }) {
 
   const connectWebSocket = () => {
     const token = localStorage.getItem('access_token');
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const wsUrl = `${protocol}//${window.location.hostname}:8000/ws/incidents/${incident.id}/chat/?token=${token}`;
+    const apiBase = import.meta.env.VITE_API_BASE_URL || `http://${window.location.hostname}:8000/api`;
+    const wsHost = apiBase.replace(/^https?:\/\//, '').replace(/\/api\/?$/, '');
+    const isSecure = apiBase.startsWith('https') || window.location.protocol === 'https:';
+    const protocol = isSecure ? 'wss:' : 'ws:';
+    const wsUrl = `${protocol}//${wsHost}/ws/incidents/${incident.id}/chat/?token=${token}`;
     
     try {
       const ws = new WebSocket(wsUrl);
