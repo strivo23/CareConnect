@@ -24,9 +24,13 @@ class ResidentProfileModel {
   final DateTime? approvedAt;
 
   factory ResidentProfileModel.fromJson(Map<String, dynamic> json) {
+    Map<String, dynamic>? userMap;
+    if (json['user'] is Map) {
+      userMap = Map<String, dynamic>.from(json['user'] as Map);
+    }
     return ResidentProfileModel(
       id: (json['id'] as num?)?.toInt() ?? 0,
-      user: json['user'] is Map<String, dynamic> ? AppUser.fromJson(json['user'] as Map<String, dynamic>) : null,
+      user: userMap != null ? AppUser.fromJson(userMap) : null,
       societyId: (json['society'] as num?)?.toInt(),
       societyName: json['society_name']?.toString() ?? '',
       blockName: json['block_name']?.toString() ?? '',

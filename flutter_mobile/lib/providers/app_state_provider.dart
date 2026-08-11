@@ -35,8 +35,9 @@ class AppStateProvider extends ChangeNotifier {
         await LocalStorageService.instance.saveJson(AppConstants.apiResidentKey, _serializeResident(resident));
       }
       _isOffline = false;
-    } catch (_) {
-      _isOffline = true;
+    } catch (e) {
+      debugPrint('[AppStateProvider] Load resident error: $e');
+      _isOffline = false;
       final cachedResident = await LocalStorageService.instance.getJson(AppConstants.apiResidentKey);
       if (cachedResident != null) {
         _residentProfile = ResidentProfileModel.fromJson(cachedResident);
