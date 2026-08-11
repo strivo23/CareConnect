@@ -65,7 +65,6 @@ INSTALLED_APPS = [
     "notifications",
     "society",
     "sos",
-    "django_celery_beat",
 ]
 
 ASGI_APPLICATION = "careconnect.asgi.application"
